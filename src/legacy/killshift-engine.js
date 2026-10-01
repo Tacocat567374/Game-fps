@@ -8079,6 +8079,7 @@ import {
           return false;
         }
 
+        const normalJump = !fromJumpPad && (grounded || coyoteTimer > 0);
         const horizontalSpeed = Math.hypot(
           moveVelocityX,
           moveVelocityZ
@@ -8117,6 +8118,10 @@ import {
 
         if (fromJumpPad) {
           showFeed(`JUMP PAD! +${Math.round(jumpForce)} FORCE`, '#67e8f9');
+        }
+
+        if (normalJump) {
+          tutorialRegisterAction('jump', true);
         }
 
         return true;
@@ -9085,7 +9090,6 @@ import {
           if (wallRunning || climbingWall) {
             tutorialRegisterAction('wall');
           } else {
-            tutorialRegisterAction('jump');
             tutorialRegisterAction('climb');
           }
         }
@@ -17994,11 +17998,6 @@ import {
         ) {
           tutorialRegisterAction('move');
         } else if (
-          step.action === 'jump' &&
-          velocityY > 1.5
-        ) {
-          tutorialRegisterAction('jump');
-        } else if (
           step.action === 'sprint' &&
           isSprintKeyDown() &&
           Math.hypot(moveVelocityX, moveVelocityZ) > WALK_SPEED * 1.05
@@ -18087,7 +18086,7 @@ import {
               if(event.code==='KeyR')tutorialRegisterAction('reload');
               if(event.code==='ControlLeft'||event.code==='ControlRight'||event.code==='KeyC')tutorialRegisterAction('slide');
               if(event.code==='ShiftLeft'||event.code==='ShiftRight')tutorialRegisterAction('sprint');
-              if(event.code==='Space'&&(!grounded||wallRunning||climbingWall))tutorialRegisterAction(wallRunning||climbingWall?'wall':'jump');
+              if(event.code==='Space'&&(wallRunning||climbingWall))tutorialRegisterAction('wall');
             });
             window.addEventListener('mousedown',event=>{
               if(!tutorialActive)return;
@@ -26269,9 +26268,6 @@ import {
           startLook: new THREE.Euler(),
           startWeapon: null,
           moved: 0,
-          jumpStarted: false,
-          jumpStartY: 0,
-          jumpAirTime: 0,
           sprintTime: 0,
           slideTime: 0,
           climbTime: 0,
@@ -26303,7 +26299,7 @@ import {
           look: 'CHALLENGE • Look around until your view clearly changes.',
           move: 'CHALLENGE • Travel at least a few steps through the course.',
           sprint: 'CHALLENGE • Sprint continuously while moving for a moment.',
-          jump: 'CHALLENGE • Jump, get airborne, then land safely.',
+          jump: 'CHALLENGE • Perform a normal jump.',
           slide: 'CHALLENGE • Sprint into the course and hold slide long enough to travel.',
           vault: 'CHALLENGE • Approach the low barrier and vault completely over it.',
           dash: 'CHALLENGE • Dash and cover meaningful ground with the burst.',
@@ -26325,9 +26321,6 @@ import {
           evidence.startLook.copy(camera.rotation);
           evidence.startWeapon = typeof selected === 'number' ? selected : null;
           evidence.moved = 0;
-          evidence.jumpStarted = false;
-          evidence.jumpStartY = camera.position.y;
-          evidence.jumpAirTime = 0;
           evidence.sprintTime = 0;
           evidence.slideTime = 0;
           evidence.climbTime = 0;
@@ -26381,7 +26374,7 @@ import {
           tutorialStatus(`✓ ${message}`);
         }
 
-        function verifyAction(action) {
+        function verifyAction(action, normalJumpSucceeded = false) {
           switch (action) {
             case 'look':
               return lookDelta() >= 0.18;
@@ -26390,8 +26383,7 @@ import {
             case 'sprint':
               return evidence.sprintTime >= 0.45;
             case 'jump':
-              return evidence.jumpStarted && evidence.jumpAirTime >= 0.22 && grounded &&
-                Math.abs(camera.position.y - evidence.startPos.y) < 0.7;
+              return normalJumpSucceeded === true;
             case 'slide':
               return evidence.slideTime >= 0.28 && evidence.moved >= 0.75;
             case 'vault':
@@ -26426,11 +26418,11 @@ import {
         const originalTutorialRegisterAction = tutorialRegisterAction;
         const originalRenderTutorialStep = renderTutorialStep;
 
-        tutorialRegisterAction = function tutorialMasteryGate(action) {
+        tutorialRegisterAction = function tutorialMasteryGate(action, normalJumpSucceeded = false) {
           if (!tutorialActive || tutorialStepDone) return;
           if (action !== currentAction()) return;
 
-          if (!verifyAction(action)) {
+          if (!verifyAction(action, normalJumpSucceeded)) {
             tutorialStatus(PROMPTS[action] || 'CHALLENGE • Demonstrate the mechanic.');
             return;
           }
@@ -26479,14 +26471,6 @@ import {
             if (!vaulting && evidence.vaultWasActive && evidence.vaultDistance >= 0.75) {
               evidence.vaultWasActive = false;
             }
-          }
-
-          if (action === 'jump') {
-            if (!evidence.jumpStarted && velocityY > 1.5 && !grounded) {
-              evidence.jumpStarted = true;
-              evidence.jumpStartY = camera.position.y;
-            }
-            if (evidence.jumpStarted) evidence.jumpAirTime += safeDt;
           }
 
           if (action === 'dash') {
