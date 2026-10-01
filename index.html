@@ -1,0 +1,512 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover"
+    />
+    <title>Killshift</title>
+    <meta name="theme-color" content="#07090c" />
+    
+    <meta name="killshift-version" content="10.0" />
+      <link rel="stylesheet" href="/src/styles.css" />
+  </head>
+  <body>
+    <div id="killshift-root">
+      <div id="hud">
+        <div id="comboHud" aria-live="polite">
+          <strong id="comboText">COMBO x0</strong>
+          <span id="comboTimer"></span>
+        </div>
+
+        <section id="miniMap" aria-label="Tactical minimap">
+          <div class="mini-map-header">
+            <span class="mini-map-title">TACTICAL RADAR</span>
+            <span id="miniMapRange" class="mini-map-range">RANGE 34M</span>
+          </div>
+
+          <canvas id="miniMapCanvas"></canvas>
+
+          <div class="mini-map-footer">
+            <span>
+              <i class="legend-player"></i>
+              PLAYER
+            </span>
+            <span>
+              <i class="legend-enemy"></i>
+              HOSTILE
+            </span>
+          </div>
+
+          <div class="mini-map-north" aria-hidden="true">N</div>
+          <div id="miniMapStatus" class="mini-map-status">SCANNING</div>
+        </section>
+
+        <button id="muteBtn" type="button" aria-label="Mute audio" aria-keyshortcuts="M" aria-pressed="false" title="Mute audio (M)">🔊</button>
+
+        <div id="waveDisplay" class="wave-display">
+          <div id="airdropMsg" class="airdrop-msg">AIRDROP DROPPING</div>
+
+          <div id="waveNumber" class="wave-number">WAVE 1</div>
+          <div id="scoreDisplay" class="score">SCORE 0</div>
+          <div id="coinsDisplay" class="score">COINS 0</div>
+
+          <div
+            id="roundModifier"
+            class="round-modifier hidden"
+            aria-live="polite"
+          >
+            <span id="roundModifierIcon"></span>
+            <span id="roundModifierName"></span>
+            <span id="roundModifierDesc"></span>
+          </div>
+        </div>
+
+        <div id="healthVignette" aria-hidden="true" role="presentation"></div>
+        <div
+          id="dangerousFloorWarning"
+          class="hazard-warning danger-floor-warning"
+        >
+          <strong>⚠ DANGEROUS FLOOR</strong>
+          <span>Move to a safe area</span>
+        </div>
+
+        <div id="meteorWarning" class="hazard-warning meteor-warning">
+          <strong>☄ METEOR INCOMING</strong>
+          <span>Move away from the marked zone</span>
+        </div>
+        <div
+          id="arenaShrinkOverlay"
+          aria-hidden="true"
+          role="presentation"
+        ></div>
+
+        <div id="blackoutOverlay" aria-hidden="true" role="presentation"></div>
+
+        <div
+          id="damageFlash"
+          class="damage-flash"
+          aria-hidden="true"
+          role="presentation"
+        ></div>
+
+        <section id="top" class="health-hud" aria-label="Player health">
+          <div class="health-header">
+            <span id="hp">HP 100 / 100</span>
+            <span id="healthPercent" aria-hidden="true">100%</span>
+          </div>
+
+          <div
+            id="healthBar"
+            class="health-bar"
+            role="progressbar"
+            aria-label="Player health"
+            aria-valuemin="0"
+            aria-valuemax="100"
+            aria-valuenow="100"
+          >
+            <div id="hpFill" class="health-fill"></div>
+            <div id="hpDamageGhost" class="health-damage-ghost"></div>
+            <div class="health-shine" aria-hidden="true"></div>
+          </div>
+
+          <div class="health-status" aria-hidden="true">
+            <span id="healthStatus">HEALTHY</span>
+          </div>
+        </section>
+
+        <div id="staminaHud" aria-label="Stamina">
+          <div id="staminaText">STAMINA</div>
+
+          <div
+            class="bar stamina-bar"
+            role="progressbar"
+            aria-label="Stamina"
+            aria-valuemin="0"
+            aria-valuemax="100"
+            aria-valuenow="100"
+          >
+            <div id="staminaFill" class="stamina-fill"></div>
+          </div>
+        </div>
+
+        <div id="weaponHud">
+          <div id="weaponName">Rifle</div>
+          <div id="ammo">30 / 120</div>
+        </div>
+        <div id="crosshair"></div>
+        <div id="hint">
+          Parkour: sprint into low cover to vault · hold SPACE near a wall to
+          climb · press SPACE off a wall to wall-jump
+        </div>
+        <div id="pick"></div>
+        <div id="killfeed"></div>
+        <div id="slots"></div>
+        <div id="hitmarker" aria-hidden="true"></div>
+        <div id="lockBanner">Click the arena to look around</div>
+      </div>
+
+      <div id="tutorialOverlay" class="tutorial-overlay" aria-hidden="true">
+        <div
+          class="tutorial-card"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="tutorialTitle"
+        >
+          <div class="tutorial-kicker" id="tutorialKicker">
+            FIRST-TIME TUTORIAL
+          </div>
+          <h1 id="tutorialTitle">Welcome to the arena</h1>
+          <p id="tutorialText"></p>
+          <div class="tutorial-visual">
+            <div class="tutorial-icon" id="tutorialIcon">🎮</div>
+            <div>
+              <strong id="tutorialVisualTitle">Movement</strong>
+              <span id="tutorialVisualText"></span>
+              <div id="tutorialMouseBadge"></div>
+            </div>
+          </div>
+          <div class="tutorial-progress">
+            <div id="tutorialProgressFill" class="tutorial-progress-fill"></div>
+          </div>
+          <div class="tutorial-actions">
+            <div class="left">
+              <button id="tutorialSkip" class="tutorial-skip" type="button">
+                SKIP TUTORIAL
+              </button>
+              <span id="tutorialPage" class="tutorial-page"></span>
+            </div>
+            <div class="right">
+              <button id="tutorialBack" class="tutorial-btn" type="button">
+                BACK
+              </button>
+              <button
+                id="tutorialNext"
+                class="tutorial-btn primary"
+                type="button"
+              >
+                NEXT
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div id="start" class="overlay show" aria-hidden="false">
+        <div class="panel start-inner">
+          <p class="ks-kicker">Night city arena</p>
+          <h1>Kill<span>shift</span></h1>
+          <p class="ks-lead">
+            A wave-based first-person shooter with parkour traversal, a rotating
+            city of combat maps, and a permanent upgrade shop.
+          </p>
+          <div id="bestRecord" class="ks-record">Best run — Wave 0 · 0 pts</div>
+          <div class="ks-status-strip" aria-label="Game systems">
+            <span><b>36</b><small>COMBAT MAPS</small></span>
+            <span><b>5</b><small>WEAPON SLOTS</small></span>
+            <span><b>∞</b><small>PARKOUR ROUTES</small></span>
+          </div>
+          <div class="ks-controls-grid">
+            <div><b>WASD</b><span>Move</span></div>
+            <div><b>Mouse</b><span>Look / fire</span></div>
+            <div><b>Shift</b><span>Sprint</span></div>
+            <div><b>Space</b><span>Jump / climb</span></div>
+            <div><b>Ctrl / C</b><span>Slide / vault</span></div>
+            <div><b>Q</b><span>Dash</span></div>
+            <div><b>G</b><span>Grapple</span></div>
+            <div><b>R</b><span>Reload</span></div>
+            <div><b>1–5</b><span>Weapons</span></div>
+          </div>
+          <div class="ks-start-actions">
+            <button id="startBtn" class="start-btn" type="button">
+              Enter the arena
+            </button>
+          </div>
+        </div>
+      </div>
+      <div id="shop" class="overlay hidden">
+        <div class="panel">
+          <h1>WAVE SHOP</h1>
+          <p id="shopSub">
+            Press <b>U</b>, <b>I</b>, or <b>O</b> to buy. Purchases are
+            permanent.
+          </p>
+
+          <div style="margin:10px 0 16px; font-weight:900;">
+            Coins: <span id="shopCoins">0</span>
+          </div>
+
+          <div style="display:grid; grid-template-columns:1fr; gap:10px;">
+            <div class="shop-options">
+              <article class="shopRow" id="shopOption1">
+                <div class="shopHotkey">U</div>
+                <div class="shopIcon" id="shopItem1Icon">✨</div>
+                <div class="shopInfo">
+                  <h2 id="shopItem1Name">—</h2>
+                  <p id="shopItem1Desc">—</p>
+                  <div class="shopCost">
+                    Cost:
+                    <strong id="shopItem1Cost">0</strong>
+                    coins
+                  </div>
+                </div>
+                <button class="shopBuyBtn" id="shopBuyBtn1" type="button">
+                  BUY
+                </button>
+              </article>
+
+              <article class="shopRow" id="shopOption2">
+                <div class="shopHotkey">I</div>
+                <div class="shopIcon" id="shopItem2Icon">✨</div>
+                <div class="shopInfo">
+                  <h2 id="shopItem2Name">—</h2>
+                  <p id="shopItem2Desc">—</p>
+                  <div class="shopCost">
+                    Cost:
+                    <strong id="shopItem2Cost">0</strong>
+                    coins
+                  </div>
+                </div>
+                <button class="shopBuyBtn" id="shopBuyBtn2" type="button">
+                  BUY
+                </button>
+              </article>
+
+              <article class="shopRow" id="shopOption3">
+                <div class="shopHotkey">O</div>
+                <div class="shopIcon" id="shopItem3Icon">✨</div>
+                <div class="shopInfo">
+                  <h2 id="shopItem3Name">—</h2>
+                  <p id="shopItem3Desc">—</p>
+                  <div class="shopCost">
+                    Cost:
+                    <strong id="shopItem3Cost">0</strong>
+                    coins
+                  </div>
+                </div>
+                <button class="shopBuyBtn" id="shopBuyBtn3" type="button">
+                  BUY
+                </button>
+              </article>
+            </div>
+          </div>
+
+          <div style="margin-top:18px; display:flex; gap:10px; flex-wrap:wrap;">
+            <button
+              id="shopRerollBtn"
+              class="continue shopRerollBtn"
+              type="button"
+            >
+              REROLL — FREE
+            </button>
+
+            <button id="shopSkipBtn" class="continue shopSkipBtn" type="button">
+              SKIP (continue)
+            </button>
+          </div>
+        </div>
+      </div>
+      <div id="abilitySelect" class="overlay hidden">
+        <div class="panel">
+          <h1>CHOOSE ACTIVE ABILITIES</h1>
+          <p>You can equip up to <b>3</b> active abilities.</p>
+
+          <div style="margin:10px 0 16px; font-weight:900;">
+            Active: <span id="activeAbilitiesCount">0</span> / 3
+          </div>
+
+          <div
+            id="abilityButtons"
+            style="display:grid; grid-template-columns:1fr 1fr; gap:10px;"
+          ></div>
+
+          <div style="margin-top:18px; display:flex; gap:10px;">
+            <button id="abilityConfirmBtn" class="continue">CONFIRM</button>
+          </div>
+        </div>
+      </div>
+      <div id="death" class="overlay">
+        <div class="panel">
+          <h1 id="loadoutTitle">Choose Your Loadout</h1>
+          <p id="loadoutText">
+            Pick your five weapons before entering the arena. Drag weapons onto
+            any slot. The arena now includes a larger traversal route with
+            vaults, mantles, wall-runs, wall-jumps, ramps, and jump pads.
+          </p>
+          <div class="loadout-label">YOUR 5 SLOTS</div>
+          <div id="loadout" class="loadout"></div>
+          <div class="loadout-label">AVAILABLE WEAPONS</div>
+          <div id="weaponList" class="weapon-list"></div>
+          <section
+            id="waveElevator"
+            class="wave-elevator"
+            hidden
+            aria-labelledby="waveElevatorTitle"
+          >
+            <div class="wave-elevator-info">
+              <div class="wave-elevator-kicker">RUN RECOVERY SYSTEM</div>
+
+              <h2 id="waveElevatorTitle" class="wave-elevator-title">
+                WAVE ELEVATOR
+              </h2>
+
+              <p id="waveElevatorText" class="wave-elevator-text">
+                Spend coins to restart this run from a previously reached wave.
+              </p>
+
+              <div class="wave-elevator-progress">
+                <span id="waveElevatorCurrentWave">CURRENT WAVE 1</span>
+                <span id="waveElevatorHighestWave">HIGHEST WAVE 1</span>
+              </div>
+
+              <label class="wave-elevator-label" for="waveElevatorRange">
+                STARTING WAVE
+              </label>
+
+              <input
+                id="waveElevatorRange"
+                class="wave-elevator-range"
+                type="range"
+                min="1"
+                max="1"
+                value="1"
+                step="1"
+              />
+
+              <div class="wave-elevator-selection">
+                <strong id="waveElevatorSelectedWave">WAVE 1</strong>
+                <span id="waveElevatorCost">Cost: —</span>
+              </div>
+            </div>
+
+            <div class="wave-elevator-actions">
+              <button
+                id="waveElevatorBtn"
+                class="elevator-btn"
+                type="button"
+                disabled
+              >
+                SELECT A WAVE
+              </button>
+
+              <small id="waveElevatorHint" class="wave-elevator-hint">
+                Reach Wave 2 to unlock the elevator.
+              </small>
+            </div>
+          </section>
+
+          <div
+            id="deathSaveTools"
+            class="save-tools"
+            aria-label="Save game tools"
+          >
+            <button id="deathSaveGameBtn" class="save-btn" type="button">
+              SAVE GAME
+            </button>
+
+            <button id="deathLoadGameBtn" class="save-btn" type="button">
+              LOAD GAME
+            </button>
+
+            <button id="deathExportGameBtn" class="save-btn" type="button">
+              EXPORT SAVE
+            </button>
+
+            <label class="save-btn file-btn" for="deathImportGameInput">
+              IMPORT SAVE
+            </label>
+
+            <input
+              id="deathImportGameInput"
+              type="file"
+              accept="application/json,.json"
+              hidden
+            />
+
+            <button
+              id="deathDeleteSaveBtn"
+              class="save-btn danger"
+              type="button"
+            >
+              DELETE SAVE
+            </button>
+          </div>
+
+          <p id="deathSaveStatus" class="save-status" aria-live="polite"></p>
+
+          <button id="continueBtn" class="continue" type="button" disabled>
+            ENTER ARENA
+          </button>
+        </div>
+      </div>
+      <div id="pause" class="overlay hidden">
+        <div class="panel start-inner">
+          <p class="ks-kicker">Paused</p>
+          <h1>Hold position</h1>
+          <p class="ks-lead">
+            Pointer unlocked. Resume to recapture the mouse, or open settings
+            with the gear in the corner.
+          </p>
+          <div class="ks-start-actions">
+            <div id="saveTools" class="save-tools" aria-label="Save game tools">
+              <button id="saveGameBtn" class="save-btn" type="button">
+                SAVE GAME
+              </button>
+
+              <button id="loadGameBtn" class="save-btn" type="button">
+                LOAD GAME
+              </button>
+
+              <button id="exportGameBtn" class="save-btn" type="button">
+                EXPORT SAVE
+              </button>
+
+              <label class="save-btn file-btn" for="importGameInput">
+                IMPORT SAVE
+              </label>
+
+              <input
+                id="importGameInput"
+                type="file"
+                accept="application/json,.json"
+                hidden
+              />
+
+              <button id="deleteSaveBtn" class="save-btn danger" type="button">
+                DELETE SAVE
+              </button>
+            </div>
+
+            <p id="saveStatus" class="save-status" aria-live="polite"></p>
+
+            <button id="resumeBtn" class="start-btn" type="button">
+              Resume
+            </button>
+          </div>
+        </div>
+      </div>
+      <div id="touchControls" aria-hidden="true">
+        <div id="touchLookZone" aria-label="Look area"></div>
+
+        <div id="touchMove" class="touch-pad" aria-label="Movement control">
+          <div id="touchStick"></div>
+        </div>
+
+        <div id="touchLook" class="touch-pad" aria-label="Look control"></div>
+
+        <div class="touch-actions">
+          <button type="button" id="touchJump">Jump</button>
+          <button type="button" id="touchSprint">Sprint</button>
+          <button type="button" id="touchDash">Dash</button>
+          <button type="button" id="touchReload">Reload</button>
+          <button type="button" id="touchFire" class="touch-fire">Fire</button>
+        </div>
+      </div>
+    </div>
+    
+    
+    
+    
+      <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
