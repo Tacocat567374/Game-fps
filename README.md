@@ -1,51 +1,228 @@
 # KillShift
 
-KillShift is a browser-based first-person shooter built with JavaScript, Three.js, and Vite.
+Browser-based first-person shooter built with:
 
-The game is still being worked on. It has weapons, enemies, waves, movement abilities, upgrades, maps, and other systems that are being improved over time.
+- JavaScript
+- Three.js
+- Vite
 
-## Running the game
+## Play the game
 
-You need Node.js installed first.
+Once GitHub Pages is enabled:
 
-Open a terminal in the project folder and run:
+```text
+https://tacocat567374.github.io/Game-fps/
+```
+
+---
+
+# What you need installed
+
+Before working on KillShift, make sure these programs are installed on the computer.
+
+| Software | Why you need it | Recommended |
+|---|---|---|
+| **Git** | Downloads the project and saves code history | Current version |
+| **Node.js** | Runs the development tools and build system | Node.js 22 LTS |
+| **npm** | Downloads the project's JavaScript packages | Comes with Node.js |
+| **Desktop web browser** | Runs and tests the game | Chrome, Edge, or Firefox |
+| **Code editor** | Used to edit the project | VS Code recommended |
+
+### Check that Git is installed
+
+Open PowerShell:
+
+```powershell
+git --version
+```
+
+You should see something like:
+
+```text
+git version 2.x.x
+```
+
+### Check that Node.js is installed
+
+```powershell
+node --version
+```
+
+You should see a version number.
+
+For this project, **Node.js 22 LTS is recommended**.
+
+### Check that npm is installed
+
+```powershell
+npm --version
+```
+
+npm normally gets installed automatically with Node.js.
+
+On some Windows computers, PowerShell may block `npm.ps1`.
+
+If this happens, use:
+
+```powershell
+npm.cmd
+```
+
+instead of:
+
+```powershell
+npm
+```
+
+For example:
+
+```powershell
+npm.cmd install
+npm.cmd run dev
+```
+
+---
+
+# Project dependencies
+
+You do **not** need to install Three.js or Vite separately.
+
+They are listed in the project's `package.json`.
+
+The main packages are:
+
+| Package | Purpose |
+|---|---|
+| `three` | The 3D game engine library |
+| `vite` | Runs the local development server and builds the game |
+
+When you run:
 
 ```powershell
 npm install
+```
+
+npm reads:
+
+```text
+package.json
+package-lock.json
+```
+
+and downloads the correct project packages into:
+
+```text
+node_modules/
+```
+
+The `node_modules` folder is created automatically.
+
+Do not manually edit it.
+
+Do not commit it to Git.
+
+If `node_modules` is missing, just run:
+
+```powershell
+npm install
+```
+
+again.
+
+---
+
+# Get the project
+
+If the project is not already on the computer:
+
+```powershell
+git clone https://github.com/Tacocat567374/Game-fps.git
+cd Game-fps
+```
+
+Then install the project packages:
+
+```powershell
+npm install
+```
+
+You normally only need to do this:
+
+- the first time you download the project
+- after `package.json` or `package-lock.json` changes
+- if `node_modules` was deleted
+
+---
+
+# Run locally
+
+Open a terminal inside the `Game-fps` folder.
+
+Start the development server:
+
+```powershell
 npm run dev
 ```
 
-Vite will show you a local web address. Open that address in your browser to play the game.
+On Windows, if PowerShell blocks npm:
 
-For some features, such as mouse pointer lock, it is best to use a normal desktop browser.
+```powershell
+npm.cmd run dev
+```
 
-## Build and tests
+Vite will print an address similar to:
 
-To make sure the project can build:
+```text
+http://localhost:5173/
+```
+
+Open that address in a desktop browser.
+
+A normal desktop browser works best because KillShift uses **pointer lock** to control the mouse during gameplay.
+
+---
+
+# Build
+
+To create the production version of the game:
 
 ```powershell
 npm run build
 ```
 
-To run the automated tests:
+Or on Windows if needed:
+
+```powershell
+npm.cmd run build
+```
+
+The finished build is placed in:
+
+```text
+dist/
+```
+
+GitHub Pages uses this built version when publishing the game.
+
+---
+
+# Run tests
 
 ```powershell
 npm test
 ```
 
-If both commands pass, that is a good sign that the project is still working.
+Or:
 
-It does not prove that every part of the game works, so it is still a good idea to play the part you changed.
+```powershell
+npm.cmd test
+```
 
-## Project structure
+Passing tests are a good sign, but also play the part of the game you changed.
 
-The game used to be almost entirely inside one very large file.
+---
 
-We are slowly splitting it into smaller modules so each part of the game has a clear job.
-
-A **module** is just a section of the program that is responsible for one part of the game.
-
-The main folders now look roughly like this:
+# Project layout
 
 ```text
 src/
@@ -68,38 +245,66 @@ src/
 └── styles.css
 ```
 
-### `src/game/`
+## `src/game/`
 
-This is where the newer modular code lives.
+Newer modular game code lives here.
 
-For example:
+| Folder | Job |
+|---|---|
+| `input` | Keyboard, mouse, and input state |
+| `movement` | Jumping, sprinting, stamina, sliding, dashing, parkour |
+| `weapons` | Weapon data |
+| `abilities` | Ability data |
+| `enemies` | Enemy definitions |
+| `maps` | Map data |
+| `waves` | Waves and round modifiers |
+| `progression` | Challenges and achievements |
+| `audio` | Sound information |
+| `config` | Game tuning values |
 
-- `input` keeps track of keyboard and mouse input.
-- `movement` handles player movement, jumping, sprinting, sliding, dashing, stamina, and parkour.
-- `weapons` contains weapon information.
-- `abilities` contains ability information.
-- `enemies` contains enemy definitions.
-- `maps` contains map information.
-- `waves` contains wave and round information.
-- `progression` contains things such as challenges and achievements.
-- `audio` contains sound information.
-- `config` contains game tuning values.
-
-### `src/legacy/killshift-engine.js`
+## `src/legacy/killshift-engine.js`
 
 This is the older game engine.
 
-It is still important and the game still uses it, but it contains many different systems in one very large file.
+It still contains many systems that have not been moved yet.
 
-The goal is to slowly move code out of it when that code has a clear place to live.
+Do not rewrite the whole file at once.
 
-Do not try to rewrite the whole file at once.
+Move one clear system at a time.
 
-Move one clear system at a time and keep the game playable.
+---
 
-## How the parts connect
+# What has already been modularized
 
-A useful example is player movement:
+The project already has separate ownership for:
+
+- game tuning
+- weapons
+- rarity data
+- abilities
+- enemy definitions
+- maps
+- waves
+- challenges
+- achievements
+- audio information
+- raw input state
+- player movement
+- stamina
+- parkour state
+
+The best examples to study are:
+
+```text
+src/game/input/
+src/game/movement/
+```
+
+---
+
+# How systems should connect
+
+Example:
 
 ```text
 Input
@@ -109,149 +314,186 @@ Movement
 Collision / World
 ```
 
-**Input** knows which buttons are being pressed.
+### Input
 
-**Movement** decides how the player should move.
+Knows things like:
 
-**Collision and World** code answers questions like:
+- W is pressed
+- Space is pressed
+- mouse button is down
+- sprint is held
 
-- Is the player standing on the ground?
-- Did the player hit a wall?
-- Can the player move into this space?
+### Movement
 
-Keeping these jobs separate makes the code easier to understand and easier to change later.
+Handles things like:
 
-## If you are working on the game
+- speed
+- jumping
+- sprinting
+- stamina
+- sliding
+- dashing
+- wall-running
+- vaulting
+- mantling
 
-Before changing code:
+### Collision / World
 
-1. Run the game and make sure it works.
-2. Read the code you are about to change.
-3. Ask which part of the game should own that code.
-4. Make one clear change at a time.
-5. Run the build and tests.
-6. Play the part of the game you changed.
-7. Commit your work with a message that explains what you changed.
+Answers things like:
 
-A good question to keep asking is:
+- Is there a floor here?
+- Is there a wall here?
+- Can the player move here?
+- Is there a ceiling above the player?
 
-> **What part of the game should own this?**
+---
 
-If the code controls movement, it probably belongs with Movement.
+# Your first task
 
-If it controls enemies, it probably belongs with Enemies.
+The next system to study is:
 
-If it controls weapons, it probably belongs with Weapons.
+## Collision / Physics
 
-The goal is not just to make the files smaller. The goal is to make it easier to tell where things belong.
+Open these two files side by side:
 
-## Git basics
+```text
+src/game/movement/movement-controller.js
+src/legacy/killshift-engine.js
+```
 
-Git keeps a history of the project.
+Before changing anything, figure out:
 
-A **commit** is like a save point for the code.
+1. Which functions check floors, walls, ceilings, or obstacles?
+2. Which functions change player movement?
+3. Which functions belong to Movement?
+4. Which functions belong to Collision or Physics?
+5. What information does Movement need from Collision?
 
-When you make a commit, Git remembers what the project looked like at that moment.
+Do not start by moving hundreds of lines.
 
-Each commit gets a long ID called a **commit hash** or **SHA**.
+First understand the boundary.
 
-It looks something like this:
+---
+
+# Main coding rule
+
+Ask:
+
+> **What part of the game should own this code?**
+
+| Code | Likely owner |
+|---|---|
+| Jumping | Movement |
+| Wall checks | Collision |
+| Enemy decisions | Enemies / AI |
+| Weapon stats | Weapons |
+| Bullet damage | Combat |
+| Map definitions | Maps |
+| Save files | Saves |
+| Health display | HUD / UI |
+
+---
+
+# When changing code
+
+Use this basic process:
+
+1. Run the game first.
+2. Read the code you want to change.
+3. Decide which system owns it.
+4. Make one clear change.
+5. Run the build.
+6. Run the tests.
+7. Play the changed part of the game.
+8. Commit it.
+
+Try to keep the game playable.
+
+Do not mix a big code cleanup with game balancing unless there is a good reason.
+
+---
+
+# Git basics
+
+## Repository
+
+A Git repository is the project plus its saved history.
+
+## Commit
+
+A commit is like a save point.
+
+Example:
+
+```text
+54c22c7 refactor: extract player movement state
+```
+
+## Commit hash
+
+Each commit gets a unique ID.
+
+Full hash:
 
 ```text
 54c22c703b4162531fc637a378bcce52e9dfb550
 ```
 
-You normally do not need to type the whole thing.
-
-The first few characters are usually enough:
+Short version:
 
 ```text
 54c22c7
 ```
 
-You can see recent commits with:
+Usually the short version is enough.
+
+See recent commits with:
 
 ```powershell
 git log --oneline
 ```
 
-You might see something like:
-
-```text
-54c22c7 refactor: extract player movement state
-2766504 refactor: establish input module ownership
-```
-
-This gives you a history of what changed.
-
-### What is `main`?
+## `main`
 
 `main` is the main working version of KillShift.
 
-Think of it as the normal path through the project's history.
+## Branch
 
-### What is a branch?
+A branch is another path where you can work without changing `main` right away.
 
-A branch is another path where you can work on something without changing `main` right away.
+Useful for:
 
-For example, if you wanted to experiment with enemy AI, you could make a branch for it.
+- experiments
+- larger features
+- risky changes
 
-If the experiment goes badly, `main` is still there.
+## Fork
 
-You do not need to make a branch for every tiny change. They are most useful when you are doing larger work or experimenting.
+A fork is a separate copy of someone else's repository under another GitHub account.
 
-### What is a fork?
+A fork is not the same thing as a branch.
 
-A fork is different from a branch.
+You probably do not need a fork for normal work on KillShift.
 
-A branch is another path inside the same repository.
+---
 
-A fork is a separate copy of a repository, usually under another GitHub account.
+# Important project files
 
-You probably do not need a fork while working directly on this project.
+| File | Purpose |
+|---|---|
+| `README.md` | Quick guide to the project |
+| `package.json` | Lists project packages and commands |
+| `package-lock.json` | Locks package versions so everyone gets the same setup |
+| `AGENTS.md` | Rules for working on the code |
+| `STATUS.md` | Current project state and next work |
+| `MIGRATION.md` | History of the modularization work |
 
-## Helpful project files
+---
 
-These files have more information about the project:
+# Main goal
 
-- `AGENTS.md` — rules and instructions for working on the code.
-- `STATUS.md` — explains what has already been changed and what comes next.
-- `MIGRATION.md` — explains how the old game is being moved into the newer project structure.
+Keep KillShift playable while making the code easier to understand.
 
-## Where to start
+Do not try to fix everything at once.
 
-If you are new to this version of the project, start by looking at:
-
-```text
-src/game/input/
-src/game/movement/
-```
-
-Then compare those files with:
-
-```text
-src/legacy/killshift-engine.js
-```
-
-Input and Movement show how a system can be moved out of the giant engine and given its own job.
-
-The next major area to study is **Collision / Physics**.
-
-Before moving anything, first try to understand which code:
-
-- checks the world for walls, floors, or obstacles
-- changes player movement
-- belongs to Movement
-- belongs to Collision or Physics
-
-Understanding the boundary is more important than moving lots of code quickly.
-
-## Current direction
-
-The main goal is simple:
-
-**Keep KillShift playable while making the code easier to understand.**
-
-The project does not need one giant rewrite.
-
-Improve it one system at a time.
+**One system at a time.**
