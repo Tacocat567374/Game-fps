@@ -1,32 +1,52 @@
 # Current Status
 
-Integration branch: romel-dev
-Working branch: codex/modularize-config-data
+Primary branch: `main`
 
 ## Current architecture
 
-Vite and Three.js load the legacy engine through src/main.js.
-Configuration, weapon data, rarity data, and the ability catalog are ES modules.
-Runtime gameplay, shop, save, and ability application still live in
-src/legacy/killshift-engine.js.
+KillShift runs as a Vite/Three.js project through `src/main.js`.
 
-## Current work
+The original game was largely contained in one very large legacy engine:
 
-Modularization Pass 2 extracts all 39 static ability definitions into a
-per-initialization factory. No ability balance or save format changed.
+`src/legacy/killshift-engine.js`
 
-## Recently validated
+That file is still present, but it is now transitional.
 
-- Node tests cover catalog order, pre-refactor metadata, all 23 hook sources,
-  fresh mutable definitions, representative hooks, shop purchase and modifier
-  consumers, and prior static-data/tutorial regressions.
-- Vite build succeeds.
-- Browser startup, save round-trip, imported save, active-ability selection,
-  and Wave 2 resume were observed without console errors.
-- Live shop purchase was not reached in the browser; the unchanged engine shop
-  functions were exercised in a focused Node harness.
+Several systems have been moved into modules under `src/game/`, including:
 
-## Next planned work
+- configuration and tuning
+- weapons and rarity data
+- abilities
+- enemies
+- maps
+- waves
+- progression data
+- audio metadata
+- raw input state
+- player movement and stamina
 
-Keep the next modularization pass small. Inspect a standalone static table such
-as round modifiers before extracting any runtime-owned ability or shop logic.
+The Movement module is the main example for future runtime modularization.
+
+Movement owns player movement state and behavior while collision/world queries are still provided by the legacy engine as dependencies.
+
+## Current validation
+
+At this handoff point:
+
+- `npm run build` passes
+- `npm test` passes 13/13 tests
+- basic gameplay smoke testing passed
+- jumps, dashes, stamina, firing, weapon switching, and pause/resume were checked
+
+## Next step
+
+The clearest next system to study is collision/physics and the world-query helpers currently used by Movement.
+
+Before moving code, identify:
+
+1. which functions answer collision or world questions
+2. which functions actually change player movement
+3. which code belongs to Collision/Physics
+4. which dependencies Movement should continue receiving from outside
+
+Move one coherent section at a time. Do not rewrite the entire game.

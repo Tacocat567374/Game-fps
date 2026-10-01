@@ -4,9 +4,9 @@
 
 Browser FPS / Killshift.
 
-Primary integration branch: `romel-dev`.
+Primary branch: `main`.
 
-Never modify `main` unless explicitly instructed.
+Treat `main` as the current known-good version of the game.
 
 ## Before making changes
 
@@ -19,7 +19,7 @@ Always:
 5. Read the relevant source before editing.
 6. Identify existing tests or QA probes covering the affected system.
 
-If the task is substantial, create a child branch from `romel-dev`.
+For substantial or risky work, create a child branch from `main`.
 
 ## Development philosophy
 
