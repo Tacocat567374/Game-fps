@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 import { createAbilityCatalog } from '../src/game/abilities/catalog.js';
+import { createInputState } from '../src/game/input/input-state.js';
 
 const source = readFileSync(new URL('../src/legacy/killshift-engine.js', import.meta.url), 'utf8');
 
@@ -25,6 +26,7 @@ function runtime() {
   const elements = new Map();
   const state = {
     ABILITY_CATALOG: createAbilityCatalog(),
+    input: createInputState(),
     alive: true,
     dying: false,
     shopOpen: false,

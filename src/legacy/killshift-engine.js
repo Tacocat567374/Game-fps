@@ -8,6 +8,8 @@ import { createChallenges } from '../game/progression/challenges.js';
 import { SOUND_FILES, MUSIC_FILE } from '../game/audio/sound-files.js';
 import { createEnemyAuthoringData } from '../game/enemies/archetypes.js';
 import { createMapCatalog } from '../game/maps/catalog.js';
+import { createAchievements } from '../game/progression/achievements.js';
+import { createInputState } from '../game/input/input-state.js';
 import {
   createCoreTuning,
   MAX_STAMINA,
@@ -302,18 +304,14 @@ import {
 
                                     let airdropWarningTimer=0;
 
-                                    let keys = {},
-        yaw = 0,
+      const input = createInputState();
+      let yaw = 0,
         pitch = 0,
-        mouseDown = false,
         loadoutMode = 'start';
-
-      let mobileSprintHeld = false;
       let mobileAutoShootEnabled = false;
 
                                     let velocityY=0;
                                     let grounded=true;
-                                    let aiming=false;
 
                                     let moveVelocityX=0;
                                     let moveVelocityZ=0;
@@ -3838,13 +3836,13 @@ import {
 
         if (!hasGameplayInput()) return;
 
-        mouseDown = true;
+        input.mouseDown = true;
         fire();
       });
 
       gameCanvas.addEventListener('mouseup', event => {
         if (event.button === 0) {
-          mouseDown = false;
+          input.mouseDown = false;
         }
       });
 
@@ -3863,7 +3861,7 @@ import {
       controls.addEventListener('lock', () => {
         clearPointerLockPending();
         pointerLockFailureShown = false;
-        mouseDown = false;
+        input.mouseDown = false;
 
         $('lockBanner')?.classList.remove('show');
         $('hint').style.opacity = '0.2';
@@ -3874,8 +3872,7 @@ import {
 
       controls.addEventListener('unlock', () => {
         clearPointerLockPending();
-        mouseDown = false;
-        aiming = false;
+        input.clearButtons();
 
         if (typeof stopSlide === 'function') {
           stopSlide();
@@ -3934,8 +3931,7 @@ import {
           return;
         }
 
-        mouseDown = false;
-        aiming = false;
+        input.clearButtons();
 
         if (controls.isLocked) {
           controls.unlock();
@@ -7856,7 +7852,7 @@ import {
                                       renderSlots();
 
                                     window.addEventListener('keydown', event => {
-                          keys[event.code] = true;
+                          input.setKey(event.code, true);
             if (event.code === 'Space') {
               event.preventDefault();
 
@@ -7963,7 +7959,7 @@ import {
                           event.code === 'ShiftLeft' ||
                           event.code === 'ShiftRight'
                         ) {
-                          keys.sprint = true;
+                          input.keys.sprint = true;
                         }
 
                                       if (event.code === 'KeyF') {
@@ -7976,13 +7972,13 @@ import {
                                     });
 
                                window.addEventListener('keyup', event => {
-              keys[event.code] = false;
+              input.setKey(event.code, false);
 
               if (
                 event.code === 'ShiftLeft' ||
                 event.code === 'ShiftRight'
               ) {
-                keys.sprint = false;
+                input.keys.sprint = false;
               }
 
               if (event.code === 'Space') {
@@ -7992,7 +7988,7 @@ import {
 
                               window.addEventListener('mousedown', event => {
         if (event.button === 2 && alive && !dying) {
-          aiming = true;
+          input.aiming = true;
         }
 
         if (!tutorialActive) {
@@ -8057,27 +8053,17 @@ import {
         }
       });
 
-                                    window.addEventListener('mouseup', event => {
-                                      if (event.button === 0) {
-                                        mouseDown = false;
-                                      }
-
-                                      if (event.button === 2) {
-                                        aiming = false;
-                                      }
-                                    });
+      input.bindMouseRelease(window);
 
                                     window.addEventListener('contextmenu', event => {
                                       event.preventDefault();
                                     });
 
                                 window.addEventListener('blur', () => {
-              mouseDown = false;
-              aiming = false;
+              input.reset({ preserveMobileSprint: true });
               jumpHeld = false;
               climbingWall = false;
               climbingObstacle = null;
-              keys = {};
               stopSlide();
             });
 
@@ -8252,22 +8238,17 @@ import {
                                       });
                                     }
                      function isSprintKeyDown() {
-        return Boolean(
-          mobileSprintHeld ||
-          keys.sprint ||
-          keys.ShiftLeft ||
-          keys.ShiftRight
-        );
+        return input.isSprintHeld();
       }
 
                         function getCurrentMoveDirection() {
                           const inputSide =
-                            (keys.KeyD ? 1 : 0) -
-                            (keys.KeyA ? 1 : 0);
+                            (input.keys.KeyD ? 1 : 0) -
+                            (input.keys.KeyA ? 1 : 0);
 
                           const inputForward =
-                            (keys.KeyW ? 1 : 0) -
-                            (keys.KeyS ? 1 : 0);
+                            (input.keys.KeyW ? 1 : 0) -
+                            (input.keys.KeyS ? 1 : 0);
 
                           let direction = getMovementDirection(
                             inputSide,
@@ -9095,8 +9076,7 @@ import {
                                       }
 
                                       shopOpen = true;
-                                      mouseDown = false;
-                                      aiming = false;
+                                      input.clearButtons();
 
                                       if (controls.isLocked) {
                                         controls.unlock();
@@ -13755,7 +13735,7 @@ import {
 
                                       let targetFov=NORMAL_FOV;
 
-                                      if(aiming){
+                                      if(input.aiming){
                                         targetFov=(k==='sniper') ? SNIPER_AIM_FOV : AIM_FOV;
                                       }
 
@@ -17112,8 +17092,7 @@ import {
                                       dying = true;
                                       alive = false;
 
-                                      mouseDown = false;
-                                      aiming = false;
+                                      input.clearButtons();
 
                                       window.playSound('death');
 
@@ -17167,9 +17146,7 @@ import {
             climbingObstacle = null;
             jumpHeld = false;
 
-                                      keys = {};
-                                    mouseDown = false;
-                                    aiming = false;
+                                      input.reset({ preserveMobileSprint: true });
                                     reloading = false;
                                    stopSlide();
 
@@ -17262,7 +17239,7 @@ import {
                                       grounded = true;
                                       jumpCutApplied = false;
 
-                                      aiming = false;
+                                      input.aiming = false;
 
                                       coyoteTimer = COYOTE_TIME;
                                       jumpBufferTimer = 0;
@@ -18066,7 +18043,7 @@ import {
 
                         if (
         (controls.isLocked || window.__qaForceLock) &&
-        mouseDown
+        input.mouseDown
       ) {
         const key = loadout[selected];
         const weapon = key && W[key];
@@ -18088,12 +18065,12 @@ import {
         !mantling
       ) {
         const inputForward =
-          (keys.KeyW ? 1 : 0) -
-          (keys.KeyS ? 1 : 0);
+          (input.keys.KeyW ? 1 : 0) -
+          (input.keys.KeyS ? 1 : 0);
 
         const inputSide =
-          (keys.KeyD ? 1 : 0) -
-          (keys.KeyA ? 1 : 0);
+          (input.keys.KeyD ? 1 : 0) -
+          (input.keys.KeyA ? 1 : 0);
 
         const inputLength = Math.hypot(
           inputSide,
@@ -18107,7 +18084,7 @@ import {
           moving &&
           stamina > 0 &&
           !sprintExhausted &&
-          !aiming &&
+          !input.aiming &&
           !sliding;
 
         updateStamina(dt, moving, sprinting);
@@ -18722,7 +18699,7 @@ import {
                   const sprintFactor = Math.min(1,speed/11);
                   const bob = grounded ? Math.sin(enhancedTime*(8+speed*.55))*.018*sprintFactor : 0;
                   visualCameraBobY = bob;
-                  const targetFov = aiming ? camera.fov : NORMAL_FOV-sprintFactor*3.2;
+                  const targetFov = input.aiming ? camera.fov : NORMAL_FOV-sprintFactor*3.2;
                   camera.fov = THREE.MathUtils.lerp(camera.fov,targetFov,1-Math.exp(-8*dt));
                   camera.updateProjectionMatrix();
                 } else visualCameraBobY = 0;
@@ -21580,18 +21557,11 @@ import {
               const fresh = () => ({ kills: 0, damage: 0, seconds: 0, bestCombo: 0, waveDamage: 0, lastWave: wave, unlocked: [], done: false });
               let run = fresh();
 
-              const ACHIEVEMENTS = {
-                firstBlood: { icon: '🩸', name: 'First Blood', desc: 'Get your first kill', test: () => life.kills >= 1 },
-                centurion: { icon: '💯', name: 'Centurion', desc: '100 lifetime kills', test: () => life.kills >= 100 },
-                reaper: { icon: '💀', name: 'Reaper', desc: '1,000 lifetime kills', test: () => life.kills >= 1000 },
-                combo10: { icon: '🔥', name: 'Combo Artist', desc: 'Reach a x10 combo', test: () => life.bestCombo >= 10 },
-                combo25: { icon: '⚡', name: 'Unstoppable', desc: 'Reach a x25 combo', test: () => life.bestCombo >= 25 },
-                wave5: { icon: '🌊', name: 'Holding Ground', desc: 'Reach wave 5', test: () => life.bestWave >= 5 },
-                wave10: { icon: '🏙️', name: 'City Breaker', desc: 'Reach wave 10', test: () => life.bestWave >= 10 },
-                wave20: { icon: '👑', name: 'Arena Legend', desc: 'Reach wave 20', test: () => life.bestWave >= 20 },
-                untouchable: { icon: '🛡️', name: 'Untouchable', desc: 'Clear a wave without taking damage', test: () => Boolean(earned.untouchable) },
-                marathon: { icon: '⏱️', name: 'Marathon', desc: 'Survive 10 minutes in one run', test: () => run.seconds >= 600 }
-              };
+              const ACHIEVEMENTS = createAchievements({
+                getLife: () => life,
+                getRun: () => run,
+                getEarned: () => earned
+              });
 
               function toast(entry) {
                 let el = document.getElementById('achToast');
@@ -22691,15 +22661,15 @@ import {
                                       get controls() { return controls; },
                                       get scene() { return scene; },
                                       get renderer() { return renderer; },
-                                      get keys() { return keys; },
-                                      setKey(code, value) { keys[code] = !!value; },
-                                      get mouseDown() { return mouseDown; },
-                                      setMouseDown(v) { mouseDown = !!v; },
-                                      get aiming() { return aiming; },
-                                      setAiming(v) { aiming = !!v; },
+                                      get keys() { return input.keys; },
+                                      setKey(code, value) { input.setKey(code, value); },
+                                      get mouseDown() { return input.mouseDown; },
+                                      setMouseDown(v) { input.setMouseDown(v); },
+                                      get aiming() { return input.aiming; },
+                                      setAiming(v) { input.setAiming(v); },
                                       get yaw() { return camera.rotation.y; },
                                        setMobileSprint(value) {
-          mobileSprintHeld = Boolean(value);
+          input.setMobileSprint(value);
         },
 
         setMobileAutoShoot(value) {
@@ -22731,8 +22701,8 @@ import {
                                         return { x: camera.position.x, y: camera.position.y, z: camera.position.z };
                                       },
                                       setKeys(codes) {
-                                        keys = {};
-                                        for (const code of codes || []) keys[code] = true;
+                                        input.clearKeys();
+                                        for (const code of codes || []) input.keys[code] = true;
                                         window.__qaForceLock = Array.isArray(codes) && codes.length > 0;
                                       },
                                       setSteer() {},
@@ -24211,9 +24181,7 @@ import {
         }
 
         function resetGameplayInput() {
-          keys = {};
-          mouseDown = false;
-          aiming = false;
+          input.reset({ preserveMobileSprint: true });
           jumpHeld = false;
         }
 
@@ -24395,8 +24363,7 @@ import {
           if (!allowed) {
             event.preventDefault();
             event.stopPropagation();
-            mouseDown = false;
-            aiming = false;
+            input.clearButtons();
           }
         }, { capture: true });
 
@@ -24406,8 +24373,7 @@ import {
           if (!gameplayTarget(event.target)) return;
 
           if (!GAMEPLAY_STATES.has(state.mode)) {
-            mouseDown = false;
-            aiming = false;
+            input.clearButtons();
             event.preventDefault();
             event.stopPropagation();
           }
@@ -25230,7 +25196,7 @@ import {
             evidence.shotObserved = true;
           }
 
-          if (action === 'aim' && aiming) {
+          if (action === 'aim' && input.aiming) {
             evidence.aimTime += safeDt;
           }
 
@@ -25360,7 +25326,7 @@ import {
         const steadyAim = ABILITY_CATALOG.steadyAim;
         if (steadyAim) {
           steadyAim.onSpread = function(value){
-            return aiming ? value * 0.85 : value;
+            return input.aiming ? value * 0.85 : value;
           };
           steadyAim.effectContract = 'ads-only-spread';
         }
