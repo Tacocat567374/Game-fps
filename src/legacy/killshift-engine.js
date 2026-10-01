@@ -10,6 +10,7 @@ import { createEnemyAuthoringData } from '../game/enemies/archetypes.js';
 import { createMapCatalog } from '../game/maps/catalog.js';
 import { createAchievements } from '../game/progression/achievements.js';
 import { createInputState } from '../game/input/input-state.js';
+import { createMovementController } from '../game/movement/movement-controller.js';
 import {
   createCoreTuning,
   MAX_STAMINA,
@@ -305,31 +306,88 @@ import {
                                     let airdropWarningTimer=0;
 
       const input = createInputState();
+      const movement = createMovementController({
+        input,
+        engine: {
+          get hasRoundModifier() { return hasRoundModifier; },
+          get renderStaminaHud() { return renderStaminaHud; },
+          get camera() { return camera; },
+          get alive() { return alive; },
+          get dying() { return dying; },
+          get hasGameplayInput() { return hasGameplayInput; },
+          get showFeed() { return showFeed; },
+          get movePlayerWithCollision() { return movePlayerWithCollision; },
+          get JUMP_PAD_MIN_FORCE() { return JUMP_PAD_MIN_FORCE; },
+          get JUMP_PAD_FORCE_MULTIPLIER() { return JUMP_PAD_FORCE_MULTIPLIER; },
+          get JUMP_PAD_JUMP_CUT_GRACE() { return JUMP_PAD_JUMP_CUT_GRACE; },
+          get tutorialRegisterAction() { return tutorialRegisterAction; },
+          get canMoveTo() { return canMoveTo; },
+          get playCombatAnimation() { return playCombatAnimation; },
+          get obstacles() { return obstacles; },
+          get getClosestPointOnObstacleXZ() { return getClosestPointOnObstacleXZ; },
+          get getWallContact() { return getWallContact; },
+          get beginWallJump() { return beginWallJump; },
+          get tryMantle() { return tryMantle; },
+          get performParkourJump() { return performParkourJump; },
+          get getWallRunContact() { return getWallRunContact; },
+          get visualCameraWallRoll() { return visualCameraWallRoll; },
+          set visualCameraWallRoll(value) { visualCameraWallRoll = value; },
+          get shopOpen() { return shopOpen; },
+          get controls() { return controls; },
+          get qaForceLock() { return window.__qaForceLock; },
+          playSound: (...args) => window.playSound(...args),
+          get abilityOwnedCount() { return abilityOwnedCount; },
+          get getActiveAbilityStacks() { return getActiveAbilityStacks; },
+          get getActiveMoveSpeedMult() { return getActiveMoveSpeedMult; },
+          get getPlayerSpeedMultiplier() { return getPlayerSpeedMultiplier; },
+          get getRoundModifierValue() { return getRoundModifierValue; },
+          get getWalkableSurfaceHeight() { return getWalkableSurfaceHeight; },
+          get updateWallRun() { return updateWallRun; },
+          get canWallClimb() { return canWallClimb; },
+          get getVerticalLandingSurface() { return getVerticalLandingSurface; },
+          get getVerticalCeilingEyeY() { return getVerticalCeilingEyeY; },
+          get resolveGroundPoundImpact() { return resolveGroundPoundImpact; },
+          updateMovementCrosshair(sprinting) {
+        const crosshair = document.getElementById('crosshair');
+
+        if (crosshair) {
+          crosshair.classList.toggle(
+            'slide-active',
+            motion.sliding
+          );
+
+          crosshair.classList.toggle(
+            'crosshair-sprint',
+            sprinting || motion.sliding
+          );
+        }
+          },
+          onDashStarted(wasGrounded) {
+          shake = Math.max(shake, 0.08);
+          if (typeof triggerWeaponAnimation === 'function') triggerWeaponAnimation('dash');
+          window.playSound?.('jump', 0.55, 1.5);
+          showFeed(wasGrounded ? 'DASH!' : 'AIR DASH!', '#67e8f9');
+          document.getElementById('killshift-root')?.classList.add('dash-active');
+          window.setTimeout(() => document.getElementById('killshift-root')?.classList.remove('dash-active'), 180);
+
+          if (tutorialActive && typeof tutorialRegisterAction === 'function') tutorialRegisterAction('dash');
+          }
+        }
+      });
+      const motion = movement.state;
+      // Keep lexical entry points so existing ability/tutorial patches retain their order.
+      let { isSprintHeld, consumeStamina, updateStamina, getSafeStamina, getMovementDirection, getCurrentMoveDirection, startSlide, stopSlide, updateSlide, performParkourJump, performAirJump, performGroundPound, updateParkourTimers, beginWallJump, updateMantle, trySprintVault, handleBufferedParkourJump, updateWallRun } = movement;
+
       let yaw = 0,
         pitch = 0,
         loadoutMode = 'start';
       let mobileAutoShootEnabled = false;
 
-                                    let velocityY=0;
-                                    let grounded=true;
-
-                                    let moveVelocityX=0;
-                                    let moveVelocityZ=0;
-
-      let mantling = false;
-      let mantleTimer = 0;
-      let mantleDuration = 0.28;
-      let mantleObstacle = null;
-
-      const mantleStartPosition = new THREE.Vector3();
-      const mantleEndPosition = new THREE.Vector3();
-      const mantleDirection = new THREE.Vector3();
 
 
-      let stamina = MAX_STAMINA;
-      let staminaRegenDelay = 0;
-      let sprintExhausted = false;
-      let staminaWarningCooldown = 0;
+
+
+
 
                                     let coins = 0;
                                     let activeRoundModifier = null;
@@ -358,135 +416,9 @@ import {
 
                                     const REROLL_COST = 50;
 
-      function isSprintHeld() {
-        return isSprintKeyDown();
-      }
 
-      function consumeStamina(amount) {
-        if (!Number.isFinite(amount) || amount <= 0) {
-          return true;
-        }
 
-        if (hasRoundModifier('infiniteStamina')) {
-          stamina = MAX_STAMINA;
-          staminaRegenDelay = 0;
-          sprintExhausted = false;
-          staminaWarningCooldown = 0;
 
-          return true;
-        }
-
-        if (stamina < amount) {
-          return false;
-        }
-
-        stamina = Math.max(0, stamina - amount);
-        staminaRegenDelay = STAMINA_REGEN_DELAY;
-
-        if (stamina <= 0) {
-          sprintExhausted = true;
-        }
-
-        return true;
-      }
-
-      function updateStamina(dt, moving = false, sprinting = false) {
-        const safeDt = THREE.MathUtils.clamp(
-          Number(dt) || 0,
-          0,
-          0.05
-        );
-
-        staminaWarningCooldown = Math.max(
-          0,
-          staminaWarningCooldown - safeDt
-        );
-
-        if (safeDt <= 0) {
-          renderStaminaHud();
-          return;
-        }
-
-        if (hasRoundModifier('infiniteStamina')) {
-          stamina = MAX_STAMINA;
-          staminaRegenDelay = 0;
-          sprintExhausted = false;
-          staminaWarningCooldown = 0;
-
-          renderStaminaHud();
-          return;
-        }
-
-        stamina = THREE.MathUtils.clamp(
-          Number.isFinite(stamina) ? stamina : MAX_STAMINA,
-          0,
-          MAX_STAMINA
-        );
-
-        staminaRegenDelay = Math.max(
-          0,
-          staminaRegenDelay - safeDt
-        );
-
-        if (sprinting && moving && !sprintExhausted) {
-          stamina = Math.max(
-            0,
-            stamina - STAMINA_DRAIN * safeDt
-          );
-
-          staminaRegenDelay = STAMINA_REGEN_DELAY;
-
-          if (stamina <= 0) {
-            stamina = 0;
-            sprintExhausted = true;
-          }
-
-          renderStaminaHud();
-          return;
-        }
-
-        if (!isSprintHeld()) {
-          sprintExhausted = false;
-        }
-
-        const sprintingWhileMoving =
-          isSprintHeld() &&
-          moving &&
-          !sprintExhausted;
-
-        // Do not regenerate while sliding or during the regen delay.
-        if (
-          sliding ||
-          staminaRegenDelay > 0 ||
-          sprintingWhileMoving
-        ) {
-          renderStaminaHud();
-          return;
-        }
-
-        stamina = Math.min(
-          MAX_STAMINA,
-          stamina + STAMINA_REGEN * safeDt
-        );
-
-        if (stamina >= STAMINA_EXHAUSTED_THRESHOLD) {
-          sprintExhausted = false;
-        }
-
-        renderStaminaHud();
-      }
-
-      function getSafeStamina() {
-        const value = Number.isFinite(stamina)
-          ? stamina
-          : MAX_STAMINA;
-
-        return THREE.MathUtils.clamp(
-          value,
-          0,
-          MAX_STAMINA
-        );
-      }
 
       function renderStaminaHud() {
         const fill = document.getElementById('staminaFill');
@@ -1014,19 +946,8 @@ import {
       const JUMP_PAD_MAX_FORCE = 15.5;
       const JUMP_PAD_JUMP_CUT_GRACE = 0.22;
 
-            let jumpCutGraceTimer = 0;
 
-            let wallRunning = false;
-            let wallRunTimer = 0;
-            let wallRunNormal = new THREE.Vector3();
-            let jumpHeld = false;
-            let jumpCutApplied = false;
 
-            let airJumpAvailable = false;
-            let groundPoundActive = false;
-            let climbingWall = false;
-            let climbingObstacle = null;
-            let wallClimbGraceTimer = 0;
 
                                     const ABILITY_CATALOG = createAbilityCatalog();
                                     const ROUND_MODIFIERS = createRoundModifiers();
@@ -1197,20 +1118,7 @@ import {
 
 
 
-                        let sliding = false;
-                        let slideTimer = 0;
-                        let slideCooldown = 0;
 
-                        let coyoteTimer = 0;
-                        let jumpBufferTimer = 0;
-                        let vaulting = false;
-                        let vaultTimer = 0;
-                        let vaultCooldown = 0;
-                        let vaultObstacle = null;
-                        let mantleCooldown = 0;
-                        let wallJumpCooldown = 0;
-                        let wasGrounded = true;
-                        const slideDirection = new THREE.Vector3();
 
 
                                     function rarityHex(rarity) {
@@ -1811,8 +1719,8 @@ import {
                 !alive ||
                 dying ||
              !hasGameplayInput()||
-                grounded ||
-                !jumpHeld
+                motion.grounded ||
+                !motion.jumpHeld
               ) {
                 return null;
               }
@@ -1824,8 +1732,8 @@ import {
               }
 
               const horizontalSpeed = Math.hypot(
-                moveVelocityX,
-                moveVelocityZ
+                motion.moveVelocityX,
+                motion.moveVelocityZ
               );
 
               if (horizontalSpeed < WALL_RUN_MIN_SPEED) {
@@ -1833,9 +1741,9 @@ import {
               }
 
               const velocity = new THREE.Vector3(
-                moveVelocityX,
+                motion.moveVelocityX,
                 0,
-                moveVelocityZ
+                motion.moveVelocityZ
               );
 
               if (velocity.lengthSq() <= 0.000001) {
@@ -1851,79 +1759,6 @@ import {
               return contact;
             }
 
-            function updateWallRun(dt) {
-              if (!Number.isFinite(dt) || dt <= 0) {
-                return false;
-              }
-
-              const contact = getWallRunContact();
-
-              if (!contact) {
-                wallRunning = false;
-                wallRunTimer = 0;
-                return false;
-              }
-
-              if (!wallRunning) {
-                wallRunning = true;
-                wallRunTimer = WALL_RUN_DURATION;
-                wallRunNormal.copy(contact.normal);
-                velocityY = 0;
-              }
-
-              wallRunTimer -= dt;
-
-              const tangent = new THREE.Vector3(
-                -wallRunNormal.z,
-                0,
-                wallRunNormal.x
-              );
-
-              if (tangent.lengthSq() <= 0.000001) {
-                wallRunning = false;
-                wallRunTimer = 0;
-                return false;
-              }
-
-              tangent.normalize();
-
-              const horizontalVelocity = new THREE.Vector3(
-                moveVelocityX,
-                0,
-                moveVelocityZ
-              );
-
-              if (horizontalVelocity.dot(tangent) < 0) {
-                tangent.negate();
-              }
-
-              moveVelocityX = tangent.x * WALL_RUN_SPEED;
-              moveVelocityZ = tangent.z * WALL_RUN_SPEED;
-
-              movePlayerWithCollision(
-                new THREE.Vector3(
-                  moveVelocityX * dt,
-                  0,
-                  moveVelocityZ * dt
-                )
-              );
-
-              camera.position.y += 1.15 * dt;
-
-              const wallTopEyeHeight =
-                contact.obstacle.maxY + PLAYER_EYE_HEIGHT;
-
-              if (
-                wallRunTimer <= 0 ||
-                !jumpHeld ||
-                camera.position.y >= wallTopEyeHeight
-              ) {
-                wallRunning = false;
-                wallRunTimer = 0;
-              }
-
-              return true;
-            }
 
       function isFiniteVector3(value) {
         return Boolean(
@@ -2232,7 +2067,7 @@ import {
         weaponMotionTime += safeDt;
 
         if (!weaponAnimation.type) {
-          const speed = Math.hypot(moveVelocityX, moveVelocityZ);
+          const speed = Math.hypot(motion.moveVelocityX, motion.moveVelocityZ);
           const movementAmount = THREE.MathUtils.clamp(
             speed / SPRINT_SPEED,
             0,
@@ -4231,7 +4066,7 @@ import {
 
         const radarRange = Math.min(
           worldBounds,
-          Math.max(28, 34 + Math.hypot(moveVelocityX, moveVelocityZ) * 0.25)
+          Math.max(28, 34 + Math.hypot(motion.moveVelocityX, motion.moveVelocityZ) * 0.25)
         );
 
         const playerX = camera.position.x;
@@ -4769,7 +4604,7 @@ import {
         if (
           dangerousFloorActiveTimer > 0 &&
           standingOnBaseFloor &&
-          grounded
+          motion.grounded
         ) {
           damagePlayer(10 * dt);
         }
@@ -6474,7 +6309,7 @@ import {
               for (const obstacle of obstacles) {
                 if (
                   obstacle.blocksMovement === false ||
-                  (vaulting && obstacle === vaultObstacle)
+                  (motion.vaulting && obstacle === motion.vaultObstacle)
                 ) {
                   continue;
                 }
@@ -6590,7 +6425,7 @@ import {
                 !alive ||
                 dying ||
                !hasGameplayInput()||
-                !jumpHeld
+                !motion.jumpHeld
               ) {
                 return null;
               }
@@ -6866,261 +6701,16 @@ import {
 
                                       disposeObject(object);
                                     }
-                        function getMovementDirection(inputSide, inputForward) {
-                          const inputLength = Math.hypot(
-                            inputSide,
-                            inputForward
-                          );
-
-                          if (inputLength <= 0) {
-                            return new THREE.Vector3();
-                          }
-
-                          const forward = new THREE.Vector3();
-                          camera.getWorldDirection(forward);
-                          forward.y = 0;
-
-                          if (forward.lengthSq() === 0) {
-                            forward.set(0, 0, -1);
-                          } else {
-                            forward.normalize();
-                          }
-
-                          const right = new THREE.Vector3(
-                            -forward.z,
-                            0,
-                            forward.x
-                          );
-
-                          return forward
-                            .multiplyScalar(inputForward / inputLength)
-                            .add(
-                              right.multiplyScalar(inputSide / inputLength)
-                            )
-                            .normalize();
-                        }
-      function startSlide(direction = null) {
-        if (
-          !alive ||
-          dying ||
-          !hasGameplayInput() ||
-          sliding ||
-          slideCooldown > 0 ||
-          !grounded
-        ) {
-          return false;
-        }
-
-        const finalDirection =
-          direction?.clone() || getCurrentMoveDirection();
-
-        finalDirection.setY(0);
-
-        if (finalDirection.lengthSq() <= 0.0001) {
-          return false;
-        }
-
-        finalDirection.normalize();
-
-        // Consume slide stamina exactly once.
-        if (!consumeStamina(SLIDE_STAMINA_COST)) {
-          if (staminaWarningCooldown <= 0) {
-            showFeed('NOT ENOUGH STAMINA', '#fca5a5');
-            staminaWarningCooldown = STAMINA_WARNING_COOLDOWN;
-          }
-
-          return false;
-        }
-
-        sliding = true;
-        slideTimer = SLIDE_DURATION;
-        slideDirection.copy(finalDirection);
-
-        moveVelocityX = slideDirection.x * SLIDE_SPEED;
-        moveVelocityZ = slideDirection.z * SLIDE_SPEED;
-
-        showFeed('SLIDE', '#bae6fd');
-        renderStaminaHud();
-
-        return true;
-      }
-
-                                  function stopSlide() {
-                          if (!sliding) {
-                            return;
-                          }
-
-                          sliding = false;
-                          slideTimer = 0;
-                          slideCooldown = SLIDE_COOLDOWN;
-
-                          const horizontalSpeed = Math.hypot(
-                            moveVelocityX,
-                            moveVelocityZ
-                          );
-
-                          const maximumExitSpeed = WALK_SPEED;
-
-                          if (horizontalSpeed > maximumExitSpeed) {
-                            const scale = maximumExitSpeed / horizontalSpeed;
-
-                            moveVelocityX *= scale;
-                            moveVelocityZ *= scale;
-                          }
-                        }
-
-                        function updateSlide(dt) {
-        const safeDt = THREE.MathUtils.clamp(
-          Number(dt) || 0,
-          0,
-          0.05
-        );
-
-        slideCooldown = Math.max(
-          0,
-          slideCooldown - safeDt
-        );
-
-        if (!sliding) {
-          return false;
-        }
-
-        // A slide must end immediately if the player leaves the ground.
-        if (
-          !alive ||
-          dying ||
-          !hasGameplayInput() ||
-          !grounded
-        ) {
-          stopSlide();
-          return false;
-        }
-
-        slideTimer -= safeDt;
-
-        const progress = THREE.MathUtils.clamp(
-          slideTimer / SLIDE_DURATION,
-          0,
-          1
-        );
-
-        const speed = THREE.MathUtils.lerp(
-          WALK_SPEED,
-          SLIDE_SPEED,
-          progress
-        );
-
-        moveVelocityX = slideDirection.x * speed;
-        moveVelocityZ = slideDirection.z * speed;
-
-        movePlayerWithCollision(
-          new THREE.Vector3(
-            moveVelocityX * safeDt,
-            0,
-            moveVelocityZ * safeDt
-          )
-        );
-
-        if (
-          slideTimer <= 0 ||
-          !isSprintHeld()
-        ) {
-          stopSlide();
-        }
-
-        return true;
-      }
 
 
-           function performParkourJump(force = JUMP_FORCE, fromJumpPad = false) {
-        if (!alive || dying || !hasGameplayInput()) {
-          return false;
-        }
-
-        const normalJump = !fromJumpPad && (grounded || coyoteTimer > 0);
-        const horizontalSpeed = Math.hypot(
-          moveVelocityX,
-          moveVelocityZ
-        );
-
-        const momentumBonus = THREE.MathUtils.clamp(
-          horizontalSpeed * 0.12,
-          0,
-          1.8
-        );
-
-        let jumpForce = force + momentumBonus;
-
-        if (fromJumpPad) {
-          jumpForce = Math.max(
-            JUMP_PAD_MIN_FORCE,
-            force * JUMP_PAD_FORCE_MULTIPLIER
-          );
-
-          jumpCutGraceTimer = JUMP_PAD_JUMP_CUT_GRACE;
-        } else {
-          jumpCutGraceTimer = 0;
-        }
-
-        jumpCutApplied = false;
-        velocityY = jumpForce;
-        grounded = false;
-        coyoteTimer = 0;
-        jumpBufferTimer = 0;
-
-        window.playSound(
-          'jump',
-          fromJumpPad ? 1.1 : 0.95,
-          fromJumpPad ? 1.2 : 1 + Math.min(horizontalSpeed, 10) * 0.015
-        );
-
-        if (fromJumpPad) {
-          showFeed(`JUMP PAD! +${Math.round(jumpForce)} FORCE`, '#67e8f9');
-        }
-
-        if (normalJump) {
-          tutorialRegisterAction('jump', true);
-        }
-
-        return true;
-      }
 
 
-            function performAirJump() {
-              if (!alive || dying ||!hasGameplayInput()|| grounded || !airJumpAvailable || groundPoundActive) {
-                return false;
-              }
 
-              const horizontalSpeed = Math.hypot(moveVelocityX, moveVelocityZ);
-              airJumpAvailable = false;
-              jumpCutApplied = false;
 
-              velocityY = 7.6 + THREE.MathUtils.clamp(horizontalSpeed * 0.08, 0, 1.2);
-              jumpCutGraceTimer = 0.08;
-              jumpBufferTimer = 0;
-              window.playSound('jump', 0.9, 1.35);
-              showFeed('AIR JUMP', '#c4b5fd');
-              return true;
-            }
 
-            function performGroundPound() {
-              if (!alive || dying ||!hasGameplayInput()|| grounded || groundPoundActive || climbingWall || wallRunning) {
-                return false;
-              }
-
-              groundPoundActive = true;
-              airJumpAvailable = false;
-              velocityY = -26;
-              moveVelocityX *= 0.72;
-              moveVelocityZ *= 0.72;
-              jumpCutGraceTimer = 0;
-              window.playSound('jump', 0.8, 0.55);
-              showFeed('GROUND POUND', '#f59e0b');
-              return true;
-            }
 
             function resolveGroundPoundImpact() {
-              if (!groundPoundActive) return;
+              if (!motion.groundPoundActive) return;
 
               const radius = 7.5;
               let hits = 0;
@@ -7148,92 +6738,22 @@ import {
 
               createExplosion(camera.position.clone().setY(camera.position.y - PLAYER_EYE_HEIGHT), 3.5, 0, 0xf59e0b);
               showFeed(hits ? `GROUND POUND • ${hits} HIT${hits === 1 ? '' : 'S'}` : 'GROUND POUND', '#f59e0b');
-              groundPoundActive = false;
-              airJumpAvailable = true;
+              motion.groundPoundActive = false;
+              motion.airJumpAvailable = true;
             }
 
-            function updateParkourTimers(dt) {
-              const safeDt = Number.isFinite(dt) && dt > 0 ? dt : 0;
 
-              vaultCooldown = Math.max(0, vaultCooldown - safeDt);
-              mantleCooldown = Math.max(0, mantleCooldown - safeDt);
-              wallJumpCooldown = Math.max(0, wallJumpCooldown - safeDt);
-              jumpBufferTimer = Math.max(0, jumpBufferTimer - safeDt);
-
-              jumpCutGraceTimer = Math.max(
-                0,
-                jumpCutGraceTimer - safeDt
-              );
-
-              if (grounded) {
-                coyoteTimer = COYOTE_TIME;
-              } else {
-                coyoteTimer = Math.max(
-                  0,
-                  coyoteTimer - safeDt
-                );
-              }
-
-              if (vaulting) {
-                vaultTimer -= safeDt;
-
-                if (vaultTimer <= 0) {
-                  vaulting = false;
-                  vaultTimer = 0;
-                  vaultObstacle = null;
-                }
-              }
-            }
-
-            function beginWallJump(contact) {
-              if (!contact || wallJumpCooldown > 0 || !alive || dying ||!hasGameplayInput()) {
-                return false;
-              }
-
-              const normal = contact.normal.clone().setY(0);
-              if (normal.lengthSq() <= 0.0001) return false;
-              normal.normalize();
-
-              const currentHorizontal = new THREE.Vector3(moveVelocityX, 0, moveVelocityZ);
-              const tangentMomentum = currentHorizontal
-                .clone()
-                .sub(normal.clone().multiplyScalar(currentHorizontal.dot(normal)));
-
-              if (tangentMomentum.lengthSq() > 0.0001) {
-                tangentMomentum.normalize().multiplyScalar(
-                  Math.min(8.5, Math.max(2.0, currentHorizontal.length() * 0.75))
-                );
-              }
-
-              moveVelocityX = tangentMomentum.x + normal.x * WALL_JUMP_PUSH;
-              moveVelocityZ = tangentMomentum.z + normal.z * WALL_JUMP_PUSH;
-              jumpCutApplied = false;
-
-              velocityY = WALL_JUMP_FORCE;
-
-              grounded = false;
-              wallRunning = false;
-              wallRunTimer = 0;
-              climbingWall = false;
-              climbingObstacle = null;
-              wallJumpCooldown = WALL_JUMP_COOLDOWN;
-              jumpBufferTimer = 0;
-
-              window.playSound('jump', 1.1, 1.25);
-              showFeed('WALL JUMP!', '#a5b4fc');
-              return true;
-            }
 
           function tryMantle() {
         if (
           !alive ||
           dying ||
           !hasGameplayInput() ||
-          mantling ||
-          mantleCooldown > 0 ||
-          vaulting ||
-          wallRunning ||
-          climbingWall
+          motion.mantling ||
+          motion.mantleCooldown > 0 ||
+          motion.vaulting ||
+          motion.wallRunning ||
+          motion.climbingWall
         ) {
           return false;
         }
@@ -7357,26 +6877,26 @@ import {
           return false;
         }
 
-        mantling = true;
-        mantleTimer = 0;
-        mantleDuration = THREE.MathUtils.clamp(
+        motion.mantling = true;
+        motion.mantleTimer = 0;
+        motion.mantleDuration = THREE.MathUtils.clamp(
           0.20 + bestLanding.distanceTo(playerPosition) * 0.025,
           0.20,
           0.36
         );
 
-        mantleObstacle = bestObstacle;
+        motion.mantleObstacle = bestObstacle;
 
-        mantleStartPosition.copy(camera.position);
-        mantleEndPosition.copy(bestLanding);
-        mantleDirection.copy(direction);
+        motion.mantleStartPosition.copy(camera.position);
+        motion.mantleEndPosition.copy(bestLanding);
+        motion.mantleDirection.copy(direction);
 
-        grounded = false;
-        velocityY = 0;
-        moveVelocityX *= 0.45;
-        moveVelocityZ *= 0.45;
+        motion.grounded = false;
+        motion.velocityY = 0;
+        motion.moveVelocityX *= 0.45;
+        motion.moveVelocityZ *= 0.45;
 
-        mantleCooldown = MANTLE_COOLDOWN;
+        motion.mantleCooldown = MANTLE_COOLDOWN;
 
         showFeed('MANTLE!', '#fef08a');
         window.playSound('jump', 0.75, 1.08);
@@ -7384,195 +6904,8 @@ import {
         return true;
       }
 
-      function updateMantle(dt) {
-        if (!mantling) {
-          return false;
-        }
 
-        const safeDt = THREE.MathUtils.clamp(
-          Number(dt) || 0,
-          0,
-          0.05
-        );
 
-        mantleTimer += safeDt;
-
-        const progress = THREE.MathUtils.clamp(
-          mantleTimer / mantleDuration,
-          0,
-          1
-        );
-
-        /*
-         * Smooth-step interpolation gives the mantle a soft start and finish.
-         */
-        const eased =
-          progress * progress * (3 - 2 * progress);
-
-        const position = new THREE.Vector3().lerpVectors(
-          mantleStartPosition,
-          mantleEndPosition,
-          eased
-        );
-
-        /*
-         * Add a small upward arc so the player rises over the ledge instead of
-         * sliding horizontally through it.
-         */
-        const arc =
-          Math.sin(progress * Math.PI) *
-          Math.min(0.42, Math.max(0.16, mantleEndPosition.y - mantleStartPosition.y) * 0.22);
-
-        position.y += arc;
-
-        /*
-         * Do not move into invalid geometry during the animation.
-         * If the current interpolated position is blocked, shorten the movement
-         * rather than allowing penetration.
-         */
-        if (canMoveTo(position, PLAYER_RADIUS)) {
-          camera.position.copy(position);
-        } else {
-          const safePosition = camera.position.clone().lerp(
-            position,
-            0.35
-          );
-
-          if (canMoveTo(safePosition, PLAYER_RADIUS)) {
-            camera.position.copy(safePosition);
-          }
-        }
-
-        moveVelocityX = THREE.MathUtils.lerp(
-          moveVelocityX,
-          mantleDirection.x * 1.2,
-          Math.min(1, safeDt * 10)
-        );
-
-        moveVelocityZ = THREE.MathUtils.lerp(
-          moveVelocityZ,
-          mantleDirection.z * 1.2,
-          Math.min(1, safeDt * 10)
-        );
-
-        if (progress >= 1) {
-          camera.position.copy(mantleEndPosition);
-
-          mantling = false;
-          mantleTimer = 0;
-          mantleObstacle = null;
-
-          velocityY = 0;
-          grounded = true;
-          jumpCutApplied = false;
-
-          climbingWall = false;
-          climbingObstacle = null;
-          wallRunning = false;
-          wallRunTimer = 0;
-
-          moveVelocityX *= 0.82;
-          moveVelocityZ *= 0.82;
-
-          playCombatAnimation('land');
-
-          return false;
-        }
-
-        return true;
-      }
-
-            function trySprintVault(direction = null) {
-              if (!alive || dying || !hasGameplayInput() || !grounded || vaulting || vaultCooldown > 0) {
-                return false;
-              }
-
-              const moveDirection = direction?.clone() || getCurrentMoveDirection();
-              if (moveDirection.lengthSq() <= 0.0001) return false;
-              moveDirection.setY(0).normalize();
-
-              const horizontalSpeed = Math.hypot(moveVelocityX, moveVelocityZ);
-              if (horizontalSpeed < VAULT_MIN_SPEED) return false;
-
-              const feetY = camera.position.y - PLAYER_EYE_HEIGHT;
-              let bestObstacle = null;
-              let bestDistance = Infinity;
-
-              for (const obstacle of obstacles) {
-                if (!obstacle || obstacle.blocksMovement === false || obstacle.climbable === false) continue;
-
-                const obstacleHeight = obstacle.maxY - feetY;
-                if (obstacleHeight < 0.35 || obstacleHeight > VAULT_MAX_HEIGHT) continue;
-
-                const closest = getClosestPointOnObstacleXZ(camera.position, obstacle);
-                const offset = closest.clone().sub(camera.position).setY(0);
-                const distance = offset.length();
-
-                if (distance > PLAYER_RADIUS + VAULT_ENTRY_DISTANCE || distance < 0.0001) continue;
-                if (offset.normalize().dot(moveDirection) < 0.5) continue;
-
-                if (distance < bestDistance) {
-                  bestDistance = distance;
-                  bestObstacle = obstacle;
-                }
-              }
-
-              if (!bestObstacle) return false;
-
-              vaulting = true;
-              vaultTimer = VAULT_DURATION;
-              vaultCooldown = VAULT_COOLDOWN;
-              vaultObstacle = bestObstacle;
-
-              velocityY = Math.max(6.5, JUMP_FORCE * 0.83);
-              grounded = false;
-
-              const vaultSpeed = Math.max(9.5, horizontalSpeed);
-              moveVelocityX = moveDirection.x * vaultSpeed;
-              moveVelocityZ = moveDirection.z * vaultSpeed;
-
-              window.playSound('jump', 0.85, 1.15);
-              showFeed('VAULT!', '#fef08a');
-              return true;
-            }
-
-          function handleBufferedParkourJump() {
-        if (
-          jumpBufferTimer <= 0 ||
-          !alive ||
-          dying ||
-          !hasGameplayInput() ||
-          mantling
-        ) {
-          return false;
-        }
-
-        /*
-         * Wall-jumps have priority while attached to a wall.
-         */
-        if (wallRunning || climbingWall) {
-          const contact = getWallContact();
-
-          if (contact) {
-            return beginWallJump(contact);
-          }
-        }
-
-        /*
-         * Try a mantle before performing a normal jump. This allows the player
-         * to press Space near a ledge instead of jumping into its wall.
-         */
-        if (tryMantle()) {
-          jumpBufferTimer = 0;
-          return true;
-        }
-
-        if (grounded || coyoteTimer > 0) {
-          return performParkourJump();
-        }
-
-        return performAirJump() || tryMantle();
-      }
 
 
             function getPlayerPenetrationRecovery(position, radius = PLAYER_RADIUS) {
@@ -7582,7 +6915,7 @@ import {
 
               for (const obstacle of obstacles) {
                 if (!obstacle || obstacle.blocksMovement === false) continue;
-                if (vaulting && obstacle === vaultObstacle) continue;
+                if (motion.vaulting && obstacle === motion.vaultObstacle) continue;
 
                 const minX = obstacle.minX - radius;
                 const maxX = obstacle.maxX + radius;
@@ -7629,8 +6962,8 @@ import {
 
               camera.position.x = recovered.x;
               camera.position.z = recovered.z;
-              moveVelocityX *= 0.35;
-              moveVelocityZ *= 0.35;
+              motion.moveVelocityX *= 0.35;
+              motion.moveVelocityZ *= 0.35;
               return true;
             }
 
@@ -7856,18 +7189,18 @@ import {
             if (event.code === 'Space') {
               event.preventDefault();
 
-              jumpHeld = true;
-              jumpBufferTimer = JUMP_BUFFER_TIME;
+              motion.jumpHeld = true;
+              motion.jumpBufferTimer = JUMP_BUFFER_TIME;
 
               if (alive && controls.isLocked && !event.repeat) {
-                if (wallRunning || climbingWall) {
+                if (motion.wallRunning || motion.climbingWall) {
                   const contact = getWallContact();
                   if (contact && beginWallJump(contact)) {
-                    jumpBufferTimer = 0;
+                    motion.jumpBufferTimer = 0;
                   }
-                } else if (grounded || coyoteTimer > 0) {
+                } else if (motion.grounded || motion.coyoteTimer > 0) {
                   performParkourJump();
-                  airJumpAvailable = true;
+                  motion.airJumpAvailable = true;
                 } else {
 
                   const wallContact = canWallClimb();
@@ -7891,7 +7224,7 @@ import {
                           controls.isLocked
                         ) {
                           event.preventDefault();
-                          if (!grounded) {
+                          if (!motion.grounded) {
 
         if (tryMantle()) {
           return;
@@ -7899,10 +7232,10 @@ import {
 
 
         if (
-          velocityY < -3 &&
-          !mantling &&
-          !climbingWall &&
-          !wallRunning
+          motion.velocityY < -3 &&
+          !motion.mantling &&
+          !motion.climbingWall &&
+          !motion.wallRunning
         ) {
           performGroundPound();
         }
@@ -7982,7 +7315,7 @@ import {
               }
 
               if (event.code === 'Space') {
-                jumpHeld = false;
+                motion.jumpHeld = false;
               }
             });
 
@@ -8045,7 +7378,7 @@ import {
         }
 
         if (event.code === 'Space') {
-          if (wallRunning || climbingWall) {
+          if (motion.wallRunning || motion.climbingWall) {
             tutorialRegisterAction('wall');
           } else {
             tutorialRegisterAction('climb');
@@ -8061,9 +7394,9 @@ import {
 
                                 window.addEventListener('blur', () => {
               input.reset({ preserveMobileSprint: true });
-              jumpHeld = false;
-              climbingWall = false;
-              climbingObstacle = null;
+              motion.jumpHeld = false;
+              motion.climbingWall = false;
+              motion.climbingObstacle = null;
               stopSlide();
             });
 
@@ -8241,45 +7574,6 @@ import {
         return input.isSprintHeld();
       }
 
-                        function getCurrentMoveDirection() {
-                          const inputSide =
-                            (input.keys.KeyD ? 1 : 0) -
-                            (input.keys.KeyA ? 1 : 0);
-
-                          const inputForward =
-                            (input.keys.KeyW ? 1 : 0) -
-                            (input.keys.KeyS ? 1 : 0);
-
-                          let direction = getMovementDirection(
-                            inputSide,
-                            inputForward
-                          );
-
-                          if (direction.lengthSq() <= 0.0001) {
-                            direction.set(
-                              moveVelocityX,
-                              0,
-                              moveVelocityZ
-                            );
-
-                            if (direction.lengthSq() > 0.0001) {
-                              direction.normalize();
-                            }
-                          }
-
-                          if (direction.lengthSq() <= 0.0001) {
-                            camera.getWorldDirection(direction);
-                            direction.y = 0;
-
-                            if (direction.lengthSq() <= 0.0001) {
-                              direction.set(0, 0, -1);
-                            } else {
-                              direction.normalize();
-                            }
-                          }
-
-                          return direction;
-                        }
 
                                      function reload() {
                                       const key = loadout[selected];
@@ -10185,7 +9479,7 @@ import {
             )
           : 0.06;
         const targetPosition = camera.position.clone().add(
-          new THREE.Vector3(moveVelocityX, 0, moveVelocityZ).multiplyScalar(leadTime)
+          new THREE.Vector3(motion.moveVelocityX, 0, motion.moveVelocityZ).multiplyScalar(leadTime)
         );
 
         const movement = new THREE.Vector3(
@@ -16288,11 +15582,6 @@ import {
                                       }
                                     }
 
-            let dashCooldown = 0;
-            let dashFlash = 0;
-            let dashActiveTime = 0;
-            const dashDirection = new THREE.Vector3();
-            let dashSpeed = 0;
 
             const TUTORIAL_STORAGE_KEY = 'shooter_live_action_tutorial_v3';
             let tutorialActive = false;
@@ -16913,12 +16202,12 @@ import {
         } else if (
           step.action === 'sprint' &&
           isSprintKeyDown() &&
-          Math.hypot(moveVelocityX, moveVelocityZ) > WALK_SPEED * 1.05
+          Math.hypot(motion.moveVelocityX, motion.moveVelocityZ) > WALK_SPEED * 1.05
         ) {
           tutorialRegisterAction('sprint');
         } else if (
           step.action === 'dash' &&
-          dashActiveTime > 0
+          motion.dashActiveTime > 0
         ) {
           tutorialRegisterAction('dash');
         } else if (
@@ -16930,9 +16219,9 @@ import {
         } else if (
           step.action === 'wall' &&
           (
-            wallRunning ||
-            climbingWall ||
-            wallJumpCooldown > 0.35
+            motion.wallRunning ||
+            motion.climbingWall ||
+            motion.wallJumpCooldown > 0.35
           )
         ) {
           tutorialRegisterAction('wall');
@@ -16999,7 +16288,7 @@ import {
               if(event.code==='KeyR')tutorialRegisterAction('reload');
               if(event.code==='ControlLeft'||event.code==='ControlRight'||event.code==='KeyC')tutorialRegisterAction('slide');
               if(event.code==='ShiftLeft'||event.code==='ShiftRight')tutorialRegisterAction('sprint');
-              if(event.code==='Space'&&(wallRunning||climbingWall))tutorialRegisterAction('wall');
+              if(event.code==='Space'&&(motion.wallRunning||motion.climbingWall))tutorialRegisterAction('wall');
             });
             window.addEventListener('mousedown',event=>{
               if(!tutorialActive)return;
@@ -17085,9 +16374,9 @@ import {
         highestWaveReached,
         wave
       );
-      mantling = false;
-      mantleTimer = 0;
-      mantleObstacle = null;
+      motion.mantling = false;
+      motion.mantleTimer = 0;
+      motion.mantleObstacle = null;
 
                                       dying = true;
                                       alive = false;
@@ -17120,40 +16409,40 @@ import {
         resetPermanentProgress = false,
         { deferWave = false } = {}
       ) {
-      mantling = false;
-      mantleTimer = 0;
-      mantleObstacle = null;
-      mantleStartPosition.set(0, 0, 0);
-      mantleEndPosition.set(0, 0, 0);
-      mantleDirection.set(0, 0, 0);
+      motion.mantling = false;
+      motion.mantleTimer = 0;
+      motion.mantleObstacle = null;
+      motion.mantleStartPosition.set(0, 0, 0);
+      motion.mantleEndPosition.set(0, 0, 0);
+      motion.mantleDirection.set(0, 0, 0);
 
                   waveGeneration++;
                   waveFinishHandled = false;
                   airdropSpawnedWave = 0;
-            jumpHeld = false;
-            jumpCutApplied = false;
+            motion.jumpHeld = false;
+            motion.jumpCutApplied = false;
 
-            airJumpAvailable = false;
-            groundPoundActive = false;
-            climbingWall = false;
-            climbingObstacle = null;
-            wallRunning = false;
-            wallRunTimer = 0;
-            wallRunNormal.set(0, 0, 0);
-      staminaWarningCooldown = 0;
+            motion.airJumpAvailable = false;
+            motion.groundPoundActive = false;
+            motion.climbingWall = false;
+            motion.climbingObstacle = null;
+            motion.wallRunning = false;
+            motion.wallRunTimer = 0;
+            motion.wallRunNormal.set(0, 0, 0);
+      motion.staminaWarningCooldown = 0;
 
-            climbingWall = false;
-            climbingObstacle = null;
-            jumpHeld = false;
+            motion.climbingWall = false;
+            motion.climbingObstacle = null;
+            motion.jumpHeld = false;
 
                                       input.reset({ preserveMobileSprint: true });
                                     reloading = false;
                                    stopSlide();
 
-                        sliding = false;
-                        slideTimer = 0;
-                        slideCooldown = 0;
-                        slideDirection.set(0, 0, 0);
+                        motion.sliding = false;
+                        motion.slideTimer = 0;
+                        motion.slideCooldown = 0;
+                        motion.slideDirection.set(0, 0, 0);
 
                                     reloadToken++;
                                     lastShot = 0;
@@ -17191,13 +16480,13 @@ import {
 
                                       airdrops = [];
 
-      stamina = MAX_STAMINA;
-      staminaRegenDelay = 0;
-      sprintExhausted = false;
-      staminaWarningCooldown = 0;
+      motion.stamina = MAX_STAMINA;
+      motion.staminaRegenDelay = 0;
+      motion.sprintExhausted = false;
+      motion.staminaWarningCooldown = 0;
 
-                                      moveVelocityX = 0;
-                                      moveVelocityZ = 0;
+                                      motion.moveVelocityX = 0;
+                                      motion.moveVelocityZ = 0;
 
                                      enemies.forEach(enemy => {
                                       if (enemy.mesh) {
@@ -17235,24 +16524,24 @@ import {
       displayedHealth = hp;
       updateHealthHud({ immediate: true });
 
-                                      velocityY = 0;
-                                      grounded = true;
-                                      jumpCutApplied = false;
+                                      motion.velocityY = 0;
+                                      motion.grounded = true;
+                                      motion.jumpCutApplied = false;
 
                                       input.aiming = false;
 
-                                      coyoteTimer = COYOTE_TIME;
-                                      jumpBufferTimer = 0;
-                                      vaulting = false;
-                                      vaultTimer = 0;
-                                      vaultCooldown = 0;
-                                      vaultObstacle = null;
-                                      mantleCooldown = 0;
-                                      wallJumpCooldown = 0;
-                                      wallRunning = false;
-                                      wallRunTimer = 0;
-                                      climbingWall = false;
-                                      climbingObstacle = null;
+                                      motion.coyoteTimer = COYOTE_TIME;
+                                      motion.jumpBufferTimer = 0;
+                                      motion.vaulting = false;
+                                      motion.vaultTimer = 0;
+                                      motion.vaultCooldown = 0;
+                                      motion.vaultObstacle = null;
+                                      motion.mantleCooldown = 0;
+                                      motion.wallJumpCooldown = 0;
+                                      motion.wallRunning = false;
+                                      motion.wallRunTimer = 0;
+                                      motion.climbingWall = false;
+                                      motion.climbingObstacle = null;
 
                                       camera.fov = NORMAL_FOV;
                                       camera.updateProjectionMatrix();
@@ -17454,7 +16743,7 @@ import {
                 if (
                   !alive ||
                   dying ||
-                  !grounded ||
+                  !motion.grounded ||
                   jumpPadCooldown > 0 ||
                   (pad.lastLaunch && pad.lastLaunch > performance.now() * 0.001)
                 ) {
@@ -17856,16 +17145,16 @@ import {
             playerGrapple.state = 'pulling';
             stopSlide();
 
-            moveVelocityX = 0;
-            moveVelocityZ = 0;
-            velocityY = 0;
-            grounded = false;
-            wallRunning = false;
-            wallRunTimer = 0;
-            climbingWall = false;
-            climbingObstacle = null;
-            wallClimbGraceTimer = 0;
-            groundPoundActive = false;
+            motion.moveVelocityX = 0;
+            motion.moveVelocityZ = 0;
+            motion.velocityY = 0;
+            motion.grounded = false;
+            motion.wallRunning = false;
+            motion.wallRunTimer = 0;
+            motion.climbingWall = false;
+            motion.climbingObstacle = null;
+            motion.wallClimbGraceTimer = 0;
+            motion.groundPoundActive = false;
           }
 
           updatePlayerGrappleVisual();
@@ -17922,8 +17211,8 @@ import {
           camera.position.y = playerGrappleNext.y;
         }
 
-        velocityY = 0;
-        grounded = false;
+        motion.velocityY = 0;
+        motion.grounded = false;
 
         if (
           camera.position.distanceTo(playerGrapple.point) <=
@@ -18000,7 +17289,7 @@ import {
 
                                    function stepGameplay(dt) {
                           advanceGameplayTasks(dt);
-                          const dashActiveAtFrameStart = dashActiveTime > 0;
+                          const dashActiveAtFrameStart = motion.dashActiveTime > 0;
 
                           updatePlayerGrapple(dt);
                           const grapplePulling = playerGrapple.state === 'pulling';
@@ -18016,7 +17305,7 @@ import {
 
                           updateParkourTimers(dt);
                           updateTutorialTraining(dt);
-                          wasGrounded = grounded;
+                          motion.wasGrounded = motion.grounded;
             updateHazards(dt);
       animateSpecialWeaponModels(performance.now());
       updateWeaponRandomizer(dt);
@@ -18055,306 +17344,7 @@ import {
 
       updateMobileAutoShoot();
 
-      const wallRunOwnsFrame = wallRunning ||
-        (!grounded && jumpHeld && dashActiveTime <= 0 && !!getWallRunContact());
-
-      if (
-        alive &&
-        hasGameplayInput() &&
-        !grapplePulling &&
-        !mantling
-      ) {
-        const inputForward =
-          (input.keys.KeyW ? 1 : 0) -
-          (input.keys.KeyS ? 1 : 0);
-
-        const inputSide =
-          (input.keys.KeyD ? 1 : 0) -
-          (input.keys.KeyA ? 1 : 0);
-
-        const inputLength = Math.hypot(
-          inputSide,
-          inputForward
-        );
-
-        const moving = inputLength > 0;
-
-        const sprinting =
-          isSprintHeld() &&
-          moving &&
-          stamina > 0 &&
-          !sprintExhausted &&
-          !input.aiming &&
-          !sliding;
-
-        updateStamina(dt, moving, sprinting);
-      if (mantling) {
-        updateMantle(dt);
-      }
-
-        if (sliding) {
-          updateSlide(dt);
-        } else if (!dashActiveAtFrameStart && dashActiveTime <= 0 && !wallRunOwnsFrame) {
-          const targetSpeed =
-            (sprinting ? SPRINT_SPEED : WALK_SPEED) *
-            getActiveMoveSpeedMult() *
-            getPlayerSpeedMultiplier() *
-            getRoundModifierValue('playerSpeed', 1) *
-            (grounded ? 1 : AIR_SPEED_MULTIPLIER);
-
-          const movementDirection = getMovementDirection(
-            inputSide,
-            inputForward
-          );
-
-          const targetVelocity =
-            movementDirection.multiplyScalar(targetSpeed);
-
-          const acceleration =
-            moving
-              ? grounded
-                ? ACCELERATION
-                : AIR_ACCELERATION
-              : DECELERATION;
-
-          const smoothing =
-            1 - Math.exp(-acceleration * dt);
-
-          moveVelocityX +=
-            (targetVelocity.x - moveVelocityX) * smoothing;
-
-          moveVelocityZ +=
-            (targetVelocity.z - moveVelocityZ) * smoothing;
-
-          if (!moving) {
-            if (Math.abs(moveVelocityX) < 0.01) {
-              moveVelocityX = 0;
-            }
-
-            if (Math.abs(moveVelocityZ) < 0.01) {
-              moveVelocityZ = 0;
-            }
-          }
-
-          movePlayerWithCollision(
-            new THREE.Vector3(
-              moveVelocityX * dt,
-              0,
-              moveVelocityZ * dt
-            )
-          );
-        }
-
-        const crosshair = document.getElementById('crosshair');
-
-        if (crosshair) {
-          crosshair.classList.toggle(
-            'slide-active',
-            sliding
-          );
-
-          crosshair.classList.toggle(
-            'crosshair-sprint',
-            sprinting || sliding
-          );
-        }
-      } else {
-
-        if (alive) {
-          updateStamina(dt, false, false);
-        }
-      }
-
-                         if (alive && camera.position.y < -8) {
-                           const safeSurface = getWalkableSurfaceHeight(
-                             camera.position.x,
-                             camera.position.z,
-                             camera.position.y - PLAYER_EYE_HEIGHT
-                           );
-                           camera.position.y = safeSurface + PLAYER_EYE_HEIGHT + 0.05;
-                           velocityY = 0;
-                           const landed = !grounded;
-                           grounded = true;
-                           jumpCutApplied = false;
-
-                             if (landed) playCombatAnimation("land");
-
-                           climbingWall = false;
-                           climbingObstacle = null;
-                           wallClimbGraceTimer = 0;
-                         }
-
-      if (
-        alive &&
-        hasGameplayInput() &&
-        !grapplePulling &&
-        !mantling
-      ) {
-
-                           handleBufferedParkourJump();
-
-                        if (
-        !jumpHeld &&
-        !jumpCutApplied &&
-        jumpCutGraceTimer <= 0 &&
-        velocityY > JUMP_CUT_MIN_VELOCITY
-      ) {
-        velocityY = Math.max(
-          JUMP_CUT_MIN_VELOCITY,
-          velocityY * JUMP_CUT_MULTIPLIER
-        );
-
-        jumpCutApplied = true;
-      }
-
-
-                         }
-
-      if (!grapplePulling && !mantling) {
-            const didWallRun = wallRunOwnsFrame && updateWallRun(dt);
-
-            if (!didWallRun) {
-
-              let wallContact = climbingWall ? getWallContact() : canWallClimb();
-
-              if (climbingWall && !wallContact && wallClimbGraceTimer > 0) {
-                wallClimbGraceTimer = Math.max(0, wallClimbGraceTimer - dt);
-                wallContact = climbingObstacle ? { obstacle: climbingObstacle, normal: wallRunNormal.clone() } : null;
-              }
-
-              if (wallContact && wallContact.obstacle?.climbable !== false) {
-                if (!climbingWall) {
-                  climbingWall = true;
-                  climbingObstacle = wallContact.obstacle;
-                }
-                wallClimbGraceTimer = 0.10;
-                grounded = false;
-                velocityY = WALL_CLIMB_SPEED;
-
-                const obstacle = climbingObstacle;
-                const desiredDistance = PLAYER_RADIUS + 0.055;
-                const closest = getClosestPointOnObstacleXZ(camera.position, obstacle);
-                const normal = wallContact.normal?.clone() || new THREE.Vector3();
-                normal.y = 0;
-                if (normal.lengthSq() > 0.0001) {
-                  normal.normalize();
-
-                  const anchor = closest.clone().addScaledVector(normal, desiredDistance);
-                  camera.position.x += (anchor.x - camera.position.x) * Math.min(1, dt * 18);
-                  camera.position.z += (anchor.z - camera.position.z) * Math.min(1, dt * 18);
-                }
-
-                const climbStep = WALL_CLIMB_SPEED * dt;
-                const topEyeY = obstacle.maxY + PLAYER_EYE_HEIGHT;
-                camera.position.y = Math.min(topEyeY, camera.position.y + climbStep);
-
-                if (camera.position.y >= topEyeY - 0.001) {
-
-                  camera.position.y = topEyeY;
-                  velocityY = 0;
-                  const landed = !grounded;
-                  grounded = true;
-                  jumpCutApplied = false;
-
-                    if (landed) playCombatAnimation("land");
-
-                  climbingWall = false;
-                  climbingObstacle = null;
-                  wallClimbGraceTimer = 0;
-                  coyoteTimer = COYOTE_TIME;
-                }
-              } else {
-                climbingWall = false;
-                climbingObstacle = null;
-                wallClimbGraceTimer = 0;
-
-                const previousY = camera.position.y;
-
-                velocityY -= (
-                  velocityY > 0
-                    ? ASCENT_GRAVITY
-                    : DESCENT_GRAVITY
-                ) * getRoundModifierValue('gravityMultiplier', 1) * dt;
-
-                const nextY =
-                  camera.position.y + velocityY * dt;
-
-                const previousFeetY = previousY - PLAYER_EYE_HEIGHT;
-                const nextFeetY = nextY - PLAYER_EYE_HEIGHT;
-                const sweptSurfaceY = velocityY <= 0
-                  ? getVerticalLandingSurface(camera.position.x, camera.position.z, previousFeetY, nextFeetY, PLAYER_RADIUS)
-                  : null;
-                const ceilingEyeY = velocityY > 0
-                  ? getVerticalCeilingEyeY(camera.position.x, camera.position.z, previousY, nextY, PLAYER_RADIUS)
-                  : null;
-                const standingSurfaceY = getWalkableSurfaceHeight(
-                  camera.position.x,
-                  camera.position.z,
-                  previousY - PLAYER_EYE_HEIGHT
-                );
-                const surfaceY = sweptSurfaceY !== null
-                  ? Math.max(standingSurfaceY, sweptSurfaceY)
-                  : standingSurfaceY;
-                const surfaceEyeY = surfaceY + PLAYER_EYE_HEIGHT;
-
-                if (
-                  velocityY <= 0 &&
-                  previousY >= surfaceEyeY - 0.06 &&
-                  nextY <= surfaceEyeY + 0.06
-                ) {
-                  camera.position.y = surfaceEyeY;
-                  velocityY = 0;
-                  const landed = !grounded;
-                  grounded = true;
-                  jumpCutApplied = false;
-
-                    if (landed) playCombatAnimation("land");
-
-                  if (groundPoundActive) resolveGroundPoundImpact();
-                  else airJumpAvailable = true;
-
-                  if (jumpBufferTimer > 0 && alive && controls.isLocked) {
-                    performParkourJump();
-                  }
-                } else if (ceilingEyeY !== null) {
-                  camera.position.y = ceilingEyeY;
-                  velocityY = 0;
-                  grounded = false;
-                } else {
-                  camera.position.y = nextY;
-                  grounded = false;
-                }
-
-                if (
-                  camera.position.y < surfaceEyeY &&
-                  velocityY <= 0
-                ) {
-                  camera.position.y = surfaceEyeY;
-                  velocityY = 0;
-                  grounded = true;
-                  jumpCutApplied = false;
-
-                  if (groundPoundActive) resolveGroundPoundImpact();
-                  else airJumpAvailable = true;
-
-                  if (jumpBufferTimer > 0 && alive && controls.isLocked) {
-                    performParkourJump();
-                  }
-                }
-
-                if (
-                  grounded &&
-                  !wasGrounded &&
-                  Math.hypot(moveVelocityX, moveVelocityZ) > 7
-                ) {
-                  const landingScale = 1 + LANDING_BOOST_SPEED * 0.01;
-                  moveVelocityX *= landingScale;
-                  moveVelocityZ *= landingScale;
-                }
-
-              }
-            }
-            }
+      movement.updateLocomotion(dt, grapplePulling, dashActiveAtFrameStart);
                 updateJumpPads(dt);
 
                           if (!tutorialActive) {
@@ -18510,8 +17500,8 @@ import {
               let messageTimer = 0;
               let lastScore = score;
               let lastWave = wave;
-              let lastGroundedState = grounded;
-              let previousVelocityY = velocityY;
+              let lastGroundedState = motion.grounded;
+              let previousVelocityY = motion.velocityY;
               let enhancedTime = 0;
               let lastObjective = '';
               let airTrick = 0;
@@ -18623,7 +17613,7 @@ import {
                   const weapon = key ? W[key] : null;
                   const recoil = weapon?.melee ? .035 : weapon?.rail || weapon?.nuke ? .11 : weapon?.explosive ? .075 : .045;
                   shake = Math.max(shake,recoil);
-                  dashFlash = weapon?.explosive ? .045 : .02;
+                  motion.dashFlash = weapon?.explosive ? .045 : .02;
                 }
               };
 
@@ -18671,47 +17661,41 @@ import {
 
               function updateUltimate(dt) {
                 enhancedTime += dt;
-                dashCooldown = Math.max(0,dashCooldown-dt);
-                if (!alive) { dashActiveTime = 0; dashSpeed = 0; }
+                movement.updateDashCooldown(dt);
                 if (messageTimer > 0) { messageTimer -= dt; if (messageTimer <= 0) msg.classList.remove('show'); }
 
-                if (dashActiveTime > 0 && alive && hasGameplayInput() && !shopOpen) {
-                  dashActiveTime = Math.max(0, dashActiveTime - dt);
-                  movePlayerWithCollision(dashDirection.clone().multiplyScalar(dashSpeed * dt));
-                  moveVelocityX = dashDirection.x * dashSpeed;
-                  moveVelocityZ = dashDirection.z * dashSpeed;
-                }
+                movement.updateDash(dt);
 
-                const speed = Math.hypot(moveVelocityX,moveVelocityZ);
+                const speed = Math.hypot(motion.moveVelocityX,motion.moveVelocityZ);
                 const momentum = THREE.MathUtils.clamp(speed/15,0,1);
                 $('momentumText').textContent = `${speed.toFixed(1)} m/s`;
                 $('momentumFill').style.width = `${momentum*100}%`;
                 const dashStatus = $('dashStatus');
                 if (dashStatus) {
-                  if (dashActiveTime > 0) dashStatus.textContent = 'Q • BOOSTING';
-                  else if (dashCooldown > 0.01) dashStatus.textContent = `Q • ${dashCooldown.toFixed(1)}s`;
-                  else if (stamina < 22) dashStatus.textContent = 'Q • NEED STAMINA';
+                  if (motion.dashActiveTime > 0) dashStatus.textContent = 'Q • BOOSTING';
+                  else if (motion.dashCooldown > 0.01) dashStatus.textContent = `Q • ${motion.dashCooldown.toFixed(1)}s`;
+                  else if (motion.stamina < 22) dashStatus.textContent = 'Q • NEED STAMINA';
                   else dashStatus.textContent = 'Q • READY';
                 }
                 updateObjective();
 
                 if (alive && (controls.isLocked || window.__qaForceLock)) {
                   const sprintFactor = Math.min(1,speed/11);
-                  const bob = grounded ? Math.sin(enhancedTime*(8+speed*.55))*.018*sprintFactor : 0;
+                  const bob = motion.grounded ? Math.sin(enhancedTime*(8+speed*.55))*.018*sprintFactor : 0;
                   visualCameraBobY = bob;
                   const targetFov = input.aiming ? camera.fov : NORMAL_FOV-sprintFactor*3.2;
                   camera.fov = THREE.MathUtils.lerp(camera.fov,targetFov,1-Math.exp(-8*dt));
                   camera.updateProjectionMatrix();
                 } else visualCameraBobY = 0;
 
-                if (!grounded && speed > 8) airTrick += dt*Math.min(2.2,speed/8);
-                else if (airTrick > 0 && grounded && previousVelocityY < -8) {
+                if (!motion.grounded && speed > 8) airTrick += dt*Math.min(2.2,speed/8);
+                else if (airTrick > 0 && motion.grounded && previousVelocityY < -8) {
                   const bonus = Math.floor(airTrick*8);
                   if (bonus > 0) { addCombo(1); score += bonus; showFeed(`PARKOUR +${bonus}`,'#67e8f9'); }
                   airTrick = 0;
                 }
 
-                if (grounded && !lastGroundedState && previousVelocityY < -7) {
+                if (motion.grounded && !lastGroundedState && previousVelocityY < -7) {
 
                   shake = Math.max(shake,Math.min(.09,Math.abs(previousVelocityY)*.006));
                   window.playSound('jump',.22,.65);
@@ -18724,10 +17708,10 @@ import {
                 }
                 if (wave !== lastWave) { lastWave=wave; }
 
-                previousVelocityY = velocityY;
-                lastGroundedState = grounded;
+                previousVelocityY = motion.velocityY;
+                lastGroundedState = motion.grounded;
 
-                if (dashFlash > 0) { dashFlash=Math.max(0,dashFlash-dt); vignette.style.opacity=String(.58+dashFlash*1.2); }
+                if (motion.dashFlash > 0) { motion.dashFlash=Math.max(0,motion.dashFlash-dt); vignette.style.opacity=String(.58+motion.dashFlash*1.2); }
                 if (shake > 0 && controls.isLocked) {
                   const amount=shake;
                   visualCameraShakeRoll=Math.sin(enhancedTime*55)*amount*.25;
@@ -19435,8 +18419,8 @@ import {
               camera.position.y = candidate.y;
             }
 
-            velocityY = 0;
-            grounded = false;
+            motion.velocityY = 0;
+            motion.grounded = false;
 
             // Keep the hook latched to the player while the cable connects the
       // grappler to the player's current position.
@@ -20455,22 +19439,22 @@ import {
                 if(!chosen)chosen=[0,1.7,56];
 
                 camera.position.set(chosen[0],chosen[1],chosen[2]);
-                velocityY=0;
-                grounded=true;
-                moveVelocityX=0;
-                moveVelocityZ=0;
-                stamina=MAX_STAMINA;
-                dashActiveTime=0;
-                dashSpeed=0;
-                dashCooldown=0;
-                climbingWall=false;
-                climbingObstacle=null;
-                wallRunning=false;
-                wallRunTimer=0;
-                sliding=false;
-                vaulting=false;
-                vaultObstacle=null;
-                vaultTimer=0;
+                motion.velocityY=0;
+                motion.grounded=true;
+                motion.moveVelocityX=0;
+                motion.moveVelocityZ=0;
+                motion.stamina=MAX_STAMINA;
+                motion.dashActiveTime=0;
+                motion.dashSpeed=0;
+                motion.dashCooldown=0;
+                motion.climbingWall=false;
+                motion.climbingObstacle=null;
+                motion.wallRunning=false;
+                motion.wallRunTimer=0;
+                motion.sliding=false;
+                motion.vaulting=false;
+                motion.vaultObstacle=null;
+                motion.vaultTimer=0;
                 camera.rotation.z=0;
                 visualCameraBobY=0;
                 visualCameraExplosionY=0;
@@ -20591,7 +19575,7 @@ import {
           const closestZ = THREE.MathUtils.clamp(camera.position.z, oldBounds.min.z, oldBounds.max.z);
           const offsetX = camera.position.x - closestX;
           const offsetZ = camera.position.z - closestZ;
-          const wasSupported = !playerCarried && grounded && alive &&
+          const wasSupported = !playerCarried && motion.grounded && alive &&
             Math.abs(feetY - oldBounds.max.y) < 0.42 &&
             offsetX * offsetX + offsetZ * offsetZ <=
               Math.pow(PLAYER_RADIUS + 0.18, 2);
@@ -20952,8 +19936,8 @@ import {
 
               const dashRechargeOnKill=()=>{
                 try{
-                  dashCooldown=Math.max(0,dashCooldown-0.9);
-                  stamina=Math.min(MAX_STAMINA,stamina+8);
+                  motion.dashCooldown=Math.max(0,motion.dashCooldown-0.9);
+                  motion.stamina=Math.min(MAX_STAMINA,motion.stamina+8);
                 }catch(_){ }
               };
 
@@ -21098,9 +20082,9 @@ import {
               }
 
               function smoothAirControl(dt){
-                if(!alive||grounded||!hasGameplayInput())return;
+                if(!alive||motion.grounded||!hasGameplayInput())return;
                 const target=controls.getDirection ? new THREE.Vector3() : null;
-                if(target){ controls.getDirection(target); target.y=0; if(target.lengthSq()>0){target.normalize(); const speed=Math.hypot(moveVelocityX,moveVelocityZ); if(speed>6){ const desiredX=target.x*speed,desiredZ=target.z*speed; const a=1-Math.exp(-2.8*dt); moveVelocityX=THREE.MathUtils.lerp(moveVelocityX,desiredX,a); moveVelocityZ=THREE.MathUtils.lerp(moveVelocityZ,desiredZ,a); } } }
+                if(target){ controls.getDirection(target); target.y=0; if(target.lengthSq()>0){target.normalize(); const speed=Math.hypot(motion.moveVelocityX,motion.moveVelocityZ); if(speed>6){ const desiredX=target.x*speed,desiredZ=target.z*speed; const a=1-Math.exp(-2.8*dt); motion.moveVelocityX=THREE.MathUtils.lerp(motion.moveVelocityX,desiredX,a); motion.moveVelocityZ=THREE.MathUtils.lerp(motion.moveVelocityZ,desiredZ,a); } } }
               }
 
               function highGroundPressure(dt){
@@ -21231,8 +20215,8 @@ import {
 
                 if(alive&&!dying&&hp>0&&hp<getMaxHealth()*0.25){
                   const clutch=1-Math.exp(-2.2*dt);
-                  moveVelocityX=THREE.MathUtils.lerp(moveVelocityX,moveVelocityX*1.035,clutch);
-                  moveVelocityZ=THREE.MathUtils.lerp(moveVelocityZ,moveVelocityZ*1.035,clutch);
+                  motion.moveVelocityX=THREE.MathUtils.lerp(motion.moveVelocityX,motion.moveVelocityX*1.035,clutch);
+                  motion.moveVelocityZ=THREE.MathUtils.lerp(motion.moveVelocityZ,motion.moveVelocityZ*1.035,clutch);
                 }
                 if(tacticalScan>0){tacticalScan=Math.max(0,tacticalScan-dt);if(tacticalScan<=0)clearTactical();}
                 if(eventTimer>0)eventTimer=Math.max(0,eventTimer-dt);
@@ -22003,14 +20987,14 @@ import {
 
         getPlayerPenetrationRecovery = function patchedGetPlayerPenetrationRecovery(position, radius = PLAYER_RADIUS) {
           if (!position) return null;
-          if (climbingWall || vaulting || wallRunning) return null;
+          if (motion.climbingWall || motion.vaulting || motion.wallRunning) return null;
           const feetY = position.y - PLAYER_EYE_HEIGHT;
           let best = null;
           let bestAmount = Infinity;
 
           for (const obstacle of obstacles) {
             if (!obstacle || obstacle.blocksMovement === false) continue;
-            if (vaulting && obstacle === vaultObstacle) continue;
+            if (motion.vaulting && obstacle === motion.vaultObstacle) continue;
             if (Number.isFinite(obstacle.maxY) && feetY >= obstacle.maxY - 0.28) continue;
             if (!positionOverlapsObstacle(position, radius, obstacle)) continue;
 
@@ -22084,15 +21068,15 @@ import {
               }
             }
             if (!slid) {
-              moveVelocityX *= 0.35;
-              moveVelocityZ *= 0.35;
+              motion.moveVelocityX *= 0.35;
+              motion.moveVelocityZ *= 0.35;
             } else {
-              const keep = Math.hypot(moveVelocityX, moveVelocityZ);
+              const keep = Math.hypot(motion.moveVelocityX, motion.moveVelocityZ);
               if (keep > 0.01) {
                 const dirX = camera.position.x === full.x ? 0 : Math.sign(stepX);
                 const dirZ = camera.position.z === full.z ? 0 : Math.sign(stepZ);
-                if (dirX === 0) moveVelocityX *= 0.15;
-                if (dirZ === 0) moveVelocityZ *= 0.15;
+                if (dirX === 0) motion.moveVelocityX *= 0.15;
+                if (dirZ === 0) motion.moveVelocityZ *= 0.15;
               }
             }
           }
@@ -22105,16 +21089,16 @@ import {
 
         getWallRunContact = function patchedGetWallRunContact() {
           if (!alive || dying || !(controls.isLocked || window.__qaForceLock)) return null;
-          if (grounded && !wallRunning) return null;
+          if (motion.grounded && !motion.wallRunning) return null;
           const contact = getWallContact();
           if (!contact || contact.obstacle?.climbable === false) return null;
-          const horizontalSpeed = Math.hypot(moveVelocityX, moveVelocityZ);
-          if (!wallRunning && horizontalSpeed < WALL_RUN_MIN_SPEED * 0.82) return null;
-          const velocity = new THREE.Vector3(moveVelocityX, 0, moveVelocityZ);
-          if (velocity.lengthSq() <= 0.000001 && !wallRunning) return null;
+          const horizontalSpeed = Math.hypot(motion.moveVelocityX, motion.moveVelocityZ);
+          if (!motion.wallRunning && horizontalSpeed < WALL_RUN_MIN_SPEED * 0.82) return null;
+          const velocity = new THREE.Vector3(motion.moveVelocityX, 0, motion.moveVelocityZ);
+          if (velocity.lengthSq() <= 0.000001 && !motion.wallRunning) return null;
           if (velocity.lengthSq() > 0.000001) {
             velocity.normalize();
-            if (!wallRunning && velocity.dot(contact.normal) >= -0.08) return null;
+            if (!motion.wallRunning && velocity.dot(contact.normal) >= -0.08) return null;
           }
           return contact;
         };
@@ -22124,40 +21108,40 @@ import {
           if (!Number.isFinite(dt) || dt <= 0) return false;
           const contact = getWallRunContact();
           if (!contact) {
-            wallRunning = false;
-            wallRunTimer = 0;
+            motion.wallRunning = false;
+            motion.wallRunTimer = 0;
             return false;
           }
-          if (!wallRunning) {
-            wallRunning = true;
-            wallRunTimer = WALL_RUN_DURATION * 1.15;
-            wallRunNormal.copy(contact.normal);
-            velocityY = Math.max(velocityY, 1.4);
-            grounded = false;
+          if (!motion.wallRunning) {
+            motion.wallRunning = true;
+            motion.wallRunTimer = WALL_RUN_DURATION * 1.15;
+            motion.wallRunNormal.copy(contact.normal);
+            motion.velocityY = Math.max(motion.velocityY, 1.4);
+            motion.grounded = false;
           }
-          wallRunTimer -= dt;
-          const tangent = new THREE.Vector3(-wallRunNormal.z, 0, wallRunNormal.x);
+          motion.wallRunTimer -= dt;
+          const tangent = new THREE.Vector3(-motion.wallRunNormal.z, 0, motion.wallRunNormal.x);
           if (tangent.lengthSq() <= 0.000001) {
-            wallRunning = false;
-            wallRunTimer = 0;
+            motion.wallRunning = false;
+            motion.wallRunTimer = 0;
             return false;
           }
           tangent.normalize();
-          if (new THREE.Vector3(moveVelocityX, 0, moveVelocityZ).dot(tangent) < 0) tangent.negate();
-          const runSpeed = Math.max(WALL_RUN_SPEED, Math.hypot(moveVelocityX, moveVelocityZ) * 0.92);
-          moveVelocityX = tangent.x * runSpeed;
-          moveVelocityZ = tangent.z * runSpeed;
-          movePlayerWithCollision(new THREE.Vector3(moveVelocityX * dt, 0, moveVelocityZ * dt));
+          if (new THREE.Vector3(motion.moveVelocityX, 0, motion.moveVelocityZ).dot(tangent) < 0) tangent.negate();
+          const runSpeed = Math.max(WALL_RUN_SPEED, Math.hypot(motion.moveVelocityX, motion.moveVelocityZ) * 0.92);
+          motion.moveVelocityX = tangent.x * runSpeed;
+          motion.moveVelocityZ = tangent.z * runSpeed;
+          movePlayerWithCollision(new THREE.Vector3(motion.moveVelocityX * dt, 0, motion.moveVelocityZ * dt));
           camera.position.y += 1.35 * dt;
           visualCameraWallRoll = THREE.MathUtils.lerp(
             visualCameraWallRoll,
-            THREE.MathUtils.clamp(-wallRunNormal.x * 0.08 + wallRunNormal.z * 0.04, -0.12, 0.12),
+            THREE.MathUtils.clamp(-motion.wallRunNormal.x * 0.08 + motion.wallRunNormal.z * 0.04, -0.12, 0.12),
             1 - Math.exp(-10 * dt),
           );
           const wallTopEyeHeight = contact.obstacle.maxY + PLAYER_EYE_HEIGHT;
-          if (wallRunTimer <= 0 || camera.position.y >= wallTopEyeHeight - 0.02) {
-            wallRunning = false;
-            wallRunTimer = 0;
+          if (motion.wallRunTimer <= 0 || camera.position.y >= wallTopEyeHeight - 0.02) {
+            motion.wallRunning = false;
+            motion.wallRunTimer = 0;
           }
           return true;
         };
@@ -22166,7 +21150,7 @@ import {
         window.tryUltimateDash = function patchedDash() {
           if (!alive || dying || shopOpen || tutorialActive) return false;
           if (!(controls.isLocked || window.__qaForceLock)) return false;
-          if (typeof dashCooldown === "number" && dashCooldown > 0.001) return false;
+          if (typeof motion.dashCooldown === "number" && motion.dashCooldown > 0.001) return false;
       if (!consumeStamina(18)) {
         showFeed('NOT ENOUGH STAMINA', '#fca5a5');
         return false;
@@ -22181,24 +21165,24 @@ import {
           if (!direction || direction.lengthSq() <= 0.0001) return false;
           direction.setY(0).normalize();
 
-          const currentSpeed = Math.hypot(moveVelocityX, moveVelocityZ);
-          const burstSpeed = grounded ? 26 : 21;
-          dashDirection.copy(direction);
-          dashSpeed = Math.max(burstSpeed, currentSpeed + 10);
-          dashActiveTime = grounded ? 0.16 : 0.13;
-          movePlayerWithCollision(dashDirection.clone().multiplyScalar(grounded ? 1.45 : 1.15));
-          moveVelocityX = dashDirection.x * dashSpeed;
-          moveVelocityZ = dashDirection.z * dashSpeed;
-          if (!grounded) velocityY = Math.max(velocityY, 2.6);
-          if (sliding) {
-            sliding = false;
-            slideTimer = 0;
+          const currentSpeed = Math.hypot(motion.moveVelocityX, motion.moveVelocityZ);
+          const burstSpeed = motion.grounded ? 26 : 21;
+          motion.dashDirection.copy(direction);
+          motion.dashSpeed = Math.max(burstSpeed, currentSpeed + 10);
+          motion.dashActiveTime = motion.grounded ? 0.16 : 0.13;
+          movePlayerWithCollision(motion.dashDirection.clone().multiplyScalar(motion.grounded ? 1.45 : 1.15));
+          motion.moveVelocityX = motion.dashDirection.x * motion.dashSpeed;
+          motion.moveVelocityZ = motion.dashDirection.z * motion.dashSpeed;
+          if (!motion.grounded) motion.velocityY = Math.max(motion.velocityY, 2.6);
+          if (motion.sliding) {
+            motion.sliding = false;
+            motion.slideTimer = 0;
           }
-          dashCooldown = grounded ? 0.48 : 0.72;
-          if (typeof dashFlash !== "undefined") dashFlash = 0.2;
+          motion.dashCooldown = motion.grounded ? 0.48 : 0.72;
+          if (typeof motion.dashFlash !== "undefined") motion.dashFlash = 0.2;
           if (typeof triggerWeaponAnimation === "function") triggerWeaponAnimation("dash");
           window.playSound?.("jump", 0.55, 1.5);
-          showFeed?.(grounded ? "DASH!" : "AIR DASH!", "#67e8f9");
+          showFeed?.(motion.grounded ? "DASH!" : "AIR DASH!", "#67e8f9");
           document.getElementById("killshift-root")?.classList.add("dash-active");
           window.setTimeout(() => document.getElementById("killshift-root")?.classList.remove("dash-active"), 180);
           return true;
@@ -22206,13 +21190,13 @@ import {
 
         const originalPerformParkourJump = performParkourJump;
         performParkourJump = function patchedPerformParkourJump(force, fromPad) {
-          const boosted = fromPad ? force : (force || JUMP_FORCE) * (wallRunning ? 1.08 : 1);
+          const boosted = fromPad ? force : (force || JUMP_FORCE) * (motion.wallRunning ? 1.08 : 1);
           const result = originalPerformParkourJump.call(this, boosted, fromPad);
-          if (grounded === false) {
-            const speed = Math.hypot(moveVelocityX, moveVelocityZ);
+          if (motion.grounded === false) {
+            const speed = Math.hypot(motion.moveVelocityX, motion.moveVelocityZ);
             if (speed > 6) {
-              moveVelocityX *= 1.04;
-              moveVelocityZ *= 1.04;
+              motion.moveVelocityX *= 1.04;
+              motion.moveVelocityZ *= 1.04;
             }
           }
           return result;
@@ -22488,9 +21472,9 @@ import {
         if (
           challenge.type === "parkourKills" &&
           (
-            dashActiveTime > 0 ||
-            wallRunning ||
-            !grounded
+            motion.dashActiveTime > 0 ||
+            motion.wallRunning ||
+            !motion.grounded
           )
         ) {
           challengeProgress += 1;
@@ -22498,7 +21482,7 @@ import {
 
         if (
           challenge.type === "movingKills" &&
-          Math.hypot(moveVelocityX, moveVelocityZ) >= SPRINT_SPEED
+          Math.hypot(motion.moveVelocityX, motion.moveVelocityZ) >= SPRINT_SPEED
         ) {
           challengeProgress += 1;
         }
@@ -22683,7 +21667,7 @@ import {
                                         const lim = Math.PI / 2 - 0.01;
                                         camera.rotation.x = Math.max(-lim, Math.min(lim, camera.rotation.x));
                                       },
-                                      getSpeed() { return Math.hypot(moveVelocityX, moveVelocityZ); },
+                                      getSpeed() { return Math.hypot(motion.moveVelocityX, motion.moveVelocityZ); },
                                       getPosition() { return camera.position.clone(); },
                                       get hp() { return hp; },
                                       get score() { return score; },
@@ -22696,7 +21680,7 @@ import {
                                     };
                                     window.__controlsTest = {
                                       getYaw() { return camera.rotation.y; },
-                                      getSpeed() { return Math.hypot(moveVelocityX, moveVelocityZ); },
+                                      getSpeed() { return Math.hypot(motion.moveVelocityX, motion.moveVelocityZ); },
                                       getPosition() {
                                         return { x: camera.position.x, y: camera.position.y, z: camera.position.z };
                                       },
@@ -22803,7 +21787,7 @@ import {
 
           for (const obstacle of obstacles) {
             if (!obstacle || obstacle.blocksMovement === false) continue;
-            if (vaulting && obstacle === vaultObstacle) continue;
+            if (motion.vaulting && obstacle === motion.vaultObstacle) continue;
 
             const expandedMinX = obstacle.minX - radius - TUNE.collisionSkin;
             const expandedMaxX = obstacle.maxX + radius + TUNE.collisionSkin;
@@ -22861,7 +21845,7 @@ import {
         }
 
         getPlayerPenetrationRecovery = function movement30Recovery(position, radius = PLAYER_RADIUS) {
-          if (!position || climbingWall || vaulting || wallRunning) return null;
+          if (!position || motion.climbingWall || motion.vaulting || motion.wallRunning) return null;
 
           let current = position.clone();
           let moved = false;
@@ -22897,9 +21881,9 @@ import {
 
           camera.position.x = recovered.x;
           camera.position.z = recovered.z;
-          moveVelocityX *= 0.12;
-          moveVelocityZ *= 0.12;
-          if (dashActiveTime > 0) dashActiveTime *= 0.45;
+          motion.moveVelocityX *= 0.12;
+          motion.moveVelocityZ *= 0.12;
+          if (motion.dashActiveTime > 0) motion.dashActiveTime *= 0.45;
           return true;
         };
 
@@ -22984,8 +21968,8 @@ import {
             }
 
             // Blocked: kill only the velocity component that actually hit.
-            if (Math.abs(stepX) >= Math.abs(stepZ)) moveVelocityX *= 0.12;
-            if (Math.abs(stepZ) >= Math.abs(stepX)) moveVelocityZ *= 0.12;
+            if (Math.abs(stepX) >= Math.abs(stepZ)) motion.moveVelocityX *= 0.12;
+            if (Math.abs(stepZ) >= Math.abs(stepX)) motion.moveVelocityZ *= 0.12;
           }
 
           const bounds = getCurrentArenaBounds();
@@ -23002,10 +21986,10 @@ import {
 
           resolvePlayerPenetration();
 
-          if (dashActiveTime > 0 && !movedAny) {
-            dashActiveTime = Math.min(dashActiveTime, 0.025);
-            moveVelocityX *= 0.20;
-            moveVelocityZ *= 0.20;
+          if (motion.dashActiveTime > 0 && !movedAny) {
+            motion.dashActiveTime = Math.min(motion.dashActiveTime, 0.025);
+            motion.moveVelocityX *= 0.20;
+            motion.moveVelocityZ *= 0.20;
           }
 
           return movedAny;
@@ -23013,7 +21997,7 @@ import {
 
         // Safe mantle: never teleport into a second obstacle or through geometry.
         tryMantle = function movement30Mantle() {
-      if (!alive || dying || !hasGameplayInput() || mantleCooldown > 0) return false;
+      if (!alive || dying || !hasGameplayInput() || motion.mantleCooldown > 0) return false;
 
           const direction = getCurrentMoveDirection().clone().setY(0);
           if (direction.lengthSq() <= 0.0001) return false;
@@ -23060,17 +22044,17 @@ import {
           if (!candidate) return false;
 
           camera.position.copy(candidate);
-          velocityY = 0;
-          grounded = true;
-          jumpCutApplied = false;
+          motion.velocityY = 0;
+          motion.grounded = true;
+          motion.jumpCutApplied = false;
 
-          wallRunning = false;
-          climbingWall = false;
-          climbingObstacle = null;
-          wallClimbGraceTimer = 0;
-          mantleCooldown = MANTLE_COOLDOWN;
-          moveVelocityX = moveVelocityX * 1.03 + direction.x * 0.35;
-          moveVelocityZ = moveVelocityZ * 1.03 + direction.z * 0.35;
+          motion.wallRunning = false;
+          motion.climbingWall = false;
+          motion.climbingObstacle = null;
+          motion.wallClimbGraceTimer = 0;
+          motion.mantleCooldown = MANTLE_COOLDOWN;
+          motion.moveVelocityX = motion.moveVelocityX * 1.03 + direction.x * 0.35;
+          motion.moveVelocityZ = motion.moveVelocityZ * 1.03 + direction.z * 0.35;
 
           showFeed('MANTLE!', '#fef08a');
           window.playSound?.('jump', 0.85, 1.1);
@@ -23128,7 +22112,7 @@ import {
         };
 
         canWallClimb = function movement30CanWallClimb() {
-          if (!alive || dying || !hasGameplayInput() || !jumpHeld || grounded) return null;
+          if (!alive || dying || !hasGameplayInput() || !motion.jumpHeld || motion.grounded) return null;
           const contact = getWallContact();
           if (!contact || contact.obstacle?.climbable === false) return null;
           return contact;
@@ -23136,89 +22120,24 @@ import {
 
         getWallRunContact = function movement30GetWallRunContact() {
           if (!alive || dying || !(controls.isLocked || window.__qaForceLock)) return null;
-          if (grounded && !wallRunning) return null;
+          if (motion.grounded && !motion.wallRunning) return null;
 
           const contact = getWallContact();
           if (!contact || contact.obstacle?.climbable === false) return null;
 
-          const horizontal = new THREE.Vector3(moveVelocityX, 0, moveVelocityZ);
+          const horizontal = new THREE.Vector3(motion.moveVelocityX, 0, motion.moveVelocityZ);
           const speed = horizontal.length();
-          if (!wallRunning && speed < TUNE.wallRunMinSpeed) return null;
+          if (!motion.wallRunning && speed < TUNE.wallRunMinSpeed) return null;
 
           if (speed > 0.0001) {
             horizontal.normalize();
-            if (!wallRunning && horizontal.dot(contact.normal) >= -0.035) return null;
+            if (!motion.wallRunning && horizontal.dot(contact.normal) >= -0.035) return null;
           }
 
           return contact;
         };
 
-        updateWallRun = function movement30UpdateWallRun(dt) {
-          if (!Number.isFinite(dt) || dt <= 0) return false;
-
-          const contact = getWallRunContact();
-          if (!contact) {
-            if (wallRunning) {
-              wallRunning = false;
-              wallRunTimer = 0;
-            }
-            return false;
-          }
-
-          if (!wallRunning) {
-            wallRunning = true;
-            wallRunTimer = TUNE.wallRunDuration;
-            wallRunNormal.copy(contact.normal).setY(0).normalize();
-            grounded = false;
-            velocityY = Math.max(velocityY, 1.1);
-          }
-
-          wallRunTimer -= dt;
-
-          const tangent = new THREE.Vector3(-wallRunNormal.z, 0, wallRunNormal.x);
-          if (tangent.lengthSq() <= 0.0001) {
-            wallRunning = false;
-            wallRunTimer = 0;
-            return false;
-          }
-          tangent.normalize();
-
-          const horizontal = new THREE.Vector3(moveVelocityX, 0, moveVelocityZ);
-          if (horizontal.dot(tangent) < 0) tangent.negate();
-
-          const carriedSpeed = Math.max(TUNE.wallRunSpeed, horizontal.length() * 0.94);
-          moveVelocityX = tangent.x * carriedSpeed;
-          moveVelocityZ = tangent.z * carriedSpeed;
-
-          // Keep the player glued to the wall without teleporting through it.
-          const closest = getClosestPointOnObstacleXZ(camera.position, contact.obstacle);
-          const wallOffset = closest.clone().addScaledVector(wallRunNormal, PLAYER_RADIUS + 0.065);
-          camera.position.x = THREE.MathUtils.lerp(camera.position.x, wallOffset.x, Math.min(1, dt * 20));
-          camera.position.z = THREE.MathUtils.lerp(camera.position.z, wallOffset.z, Math.min(1, dt * 20));
-
-          movePlayerWithCollision(new THREE.Vector3(moveVelocityX * dt, 0, moveVelocityZ * dt));
-          camera.position.y += TUNE.wallRunLift * dt;
-          grounded = false;
-
-          const topEyeY = contact.obstacle.maxY + PLAYER_EYE_HEIGHT;
-          if (wallRunTimer <= 0 || camera.position.y >= topEyeY - TUNE.landingSnap || !jumpHeld) {
-            wallRunning = false;
-            wallRunTimer = 0;
-            camera.position.y = Math.min(camera.position.y, topEyeY + 0.02);
-          }
-
-          visualCameraWallRoll = THREE.MathUtils.lerp(
-            visualCameraWallRoll,
-            THREE.MathUtils.clamp(
-              -wallRunNormal.x * 0.075 + wallRunNormal.z * 0.04,
-              -0.12,
-              0.12,
-            ),
-            1 - Math.exp(-12 * dt),
-          );
-
-          return true;
-        };
+        updateWallRun = (dt) => movement.updateWallRun30(dt, TUNE);
 
         // The main Ultimate loop intentionally pauses during the tutorial. Keep a
         // small dash driver here so tutorial dashes still travel the full burst.
@@ -23226,88 +22145,13 @@ import {
         updateParkourTimers = function movement30ParkourTimers(dt) {
           movement30OriginalParkourTimers(dt);
 
-          if (tutorialActive && dashActiveTime > 0 && alive && hasGameplayInput() && !shopOpen) {
-            dashActiveTime = Math.max(0, dashActiveTime - dt);
-            const distance = Math.max(0, dashSpeed * dt);
-            if (distance > 0) {
-              const moved = movePlayerWithCollision(dashDirection.clone().multiplyScalar(distance));
-              moveVelocityX = dashDirection.x * dashSpeed;
-              moveVelocityZ = dashDirection.z * dashSpeed;
-              if (!moved) {
-                dashActiveTime = Math.min(dashActiveTime, 0.02);
-              }
-            }
-          }
+          if (tutorialActive) movement.updateDash(dt, true);
         };
 
         // Replace every dash entry point with one controller. The old Q listener calls
         // the lexical function, while touch input calls window.tryUltimateDash, so both
         // references are assigned here.
-        const finalDash = function movement30Dash() {
-          if (!alive || dying || shopOpen) return false;
-          if (!(controls.isLocked || window.__qaForceLock)) return false;
-          if (dashCooldown > 0.001) return false;
-
-          let direction = typeof getCurrentMoveDirection === 'function' ? getCurrentMoveDirection() : null;
-          if (!direction || direction.lengthSq() <= 0.0001) {
-            direction = new THREE.Vector3();
-            camera.getWorldDirection(direction);
-            direction.y = 0;
-            if (direction.lengthSq() <= 0.0001) direction.set(0, 0, -1);
-          }
-          direction.setY(0);
-          if (direction.lengthSq() <= 0.0001) return false;
-          direction.normalize();
-
-          if (!consumeStamina(TUNE.dashStamina)) {
-            showFeed('NOT ENOUGH STAMINA', '#fca5a5');
-            return false;
-          }
-
-          const wasGrounded = grounded;
-          dashDirection.copy(direction);
-          dashSpeed = Math.max(
-            wasGrounded ? TUNE.dashGroundSpeed : TUNE.dashAirSpeed,
-            Math.hypot(moveVelocityX, moveVelocityZ) + (wasGrounded ? 9 : 7),
-          );
-          dashActiveTime = wasGrounded ? TUNE.dashGroundTime : TUNE.dashAirTime;
-
-          sliding = false;
-          slideTimer = 0;
-          vaulting = false;
-          vaultObstacle = null;
-          vaultTimer = 0;
-          wallRunning = false;
-          wallRunTimer = 0;
-          climbingWall = false;
-          climbingObstacle = null;
-          wallClimbGraceTimer = 0;
-
-          // A tiny immediate burst makes the dash feel instant while the dash state
-          // carries the remaining distance through the normal collision solver.
-          movePlayerWithCollision(dashDirection.clone().multiplyScalar(TUNE.dashInitialTravel));
-
-          moveVelocityX = dashDirection.x * dashSpeed;
-          moveVelocityZ = dashDirection.z * dashSpeed;
-          if (!wasGrounded) velocityY = Math.max(velocityY, 2.6);
-
-          const secondWindStacks = typeof abilityOwnedCount === 'function'
-            ? getActiveAbilityStacks('secondWind')
-            : 0;
-          const cooldownMultiplier = Math.pow(0.80, Math.max(0, secondWindStacks));
-          dashCooldown = (wasGrounded ? TUNE.dashGroundCooldown : TUNE.dashAirCooldown) * cooldownMultiplier;
-
-          dashFlash = 0.18;
-          shake = Math.max(shake, 0.08);
-          if (typeof triggerWeaponAnimation === 'function') triggerWeaponAnimation('dash');
-          window.playSound?.('jump', 0.55, 1.5);
-          showFeed(wasGrounded ? 'DASH!' : 'AIR DASH!', '#67e8f9');
-          document.getElementById('killshift-root')?.classList.add('dash-active');
-          window.setTimeout(() => document.getElementById('killshift-root')?.classList.remove('dash-active'), 180);
-
-          if (tutorialActive && typeof tutorialRegisterAction === 'function') tutorialRegisterAction('dash');
-          return true;
-        };
+        const finalDash = () => movement.startDash(TUNE);
 
         window.__killshiftMovement30Dash = finalDash;
         window.tryUltimateDash = finalDash;
@@ -23322,14 +22166,14 @@ import {
           dash: finalDash,
           getState() {
             return {
-              speed: Math.hypot(moveVelocityX, moveVelocityZ),
-              grounded,
-              sliding,
-              wallRunning,
-              climbingWall,
-              vaulting,
-              dashActive: dashActiveTime > 0,
-              dashCooldown,
+              speed: Math.hypot(motion.moveVelocityX, motion.moveVelocityZ),
+              grounded: motion.grounded,
+              sliding: motion.sliding,
+              wallRunning: motion.wallRunning,
+              climbingWall: motion.climbingWall,
+              vaulting: motion.vaulting,
+              dashActive: motion.dashActiveTime > 0,
+              dashCooldown: motion.dashCooldown,
             };
           },
         };
@@ -24182,7 +23026,7 @@ import {
 
         function resetGameplayInput() {
           input.reset({ preserveMobileSprint: true });
-          jumpHeld = false;
+          motion.jumpHeld = false;
         }
 
         function transition(next, reason = 'sync') {
@@ -25058,7 +23902,7 @@ import {
             case 'wall':
               return evidence.wallJumpStarted && evidence.wallJumpDistance >= 0.7;
             case 'pad':
-              return evidence.padTriggered && (velocityY > 2.5 || camera.position.y > evidence.startPos.y + 0.8);
+              return evidence.padTriggered && (motion.velocityY > 2.5 || camera.position.y > evidence.startPos.y + 0.8);
             case 'grapple':
               return evidence.grappleObserved && evidence.grappleProgress >= 0.30;
             case 'shoot':
@@ -25111,18 +23955,18 @@ import {
           const action = currentAction();
           evidence.moved = Math.max(evidence.moved, horizontalDistanceFromStart());
 
-          if (action === 'sprint' && isSprintKeyDown() && Math.hypot(moveVelocityX, moveVelocityZ) > WALK_SPEED * 1.05) {
+          if (action === 'sprint' && isSprintKeyDown() && Math.hypot(motion.moveVelocityX, motion.moveVelocityZ) > WALK_SPEED * 1.05) {
             evidence.sprintTime += safeDt;
           } else if (action !== 'sprint') {
             evidence.sprintTime = Math.max(0, evidence.sprintTime - safeDt * 0.15);
           }
 
-          if (action === 'slide' && sliding) {
+          if (action === 'slide' && motion.sliding) {
             evidence.slideTime += safeDt;
           }
 
           if (action === 'vault') {
-            if (vaulting && !evidence.vaultWasActive) {
+            if (motion.vaulting && !evidence.vaultWasActive) {
               evidence.vaultWasActive = true;
               evidence.vaultStartPos.copy(camera.position);
             }
@@ -25131,13 +23975,13 @@ import {
               const dz = camera.position.z - evidence.vaultStartPos.z;
               evidence.vaultDistance = Math.max(evidence.vaultDistance, Math.hypot(dx, dz));
             }
-            if (!vaulting && evidence.vaultWasActive && evidence.vaultDistance >= 0.75) {
+            if (!motion.vaulting && evidence.vaultWasActive && evidence.vaultDistance >= 0.75) {
               evidence.vaultWasActive = false;
             }
           }
 
           if (action === 'dash') {
-            if (dashActiveTime > 0 && !evidence.dashWasActive) {
+            if (motion.dashActiveTime > 0 && !evidence.dashWasActive) {
               evidence.dashWasActive = true;
               evidence.dashStartPos.copy(camera.position);
             }
@@ -25146,18 +23990,18 @@ import {
               const dz = camera.position.z - evidence.dashStartPos.z;
               evidence.dashDistance = Math.max(evidence.dashDistance, Math.hypot(dx, dz));
             }
-            if (dashActiveTime <= 0 && evidence.dashWasActive && evidence.dashDistance >= 2.5) {
+            if (motion.dashActiveTime <= 0 && evidence.dashWasActive && evidence.dashDistance >= 2.5) {
               evidence.dashWasActive = false;
             }
           }
 
-          if (action === 'climb' && climbingWall) {
+          if (action === 'climb' && motion.climbingWall) {
             if (evidence.climbTime <= 0) evidence.climbStartY = camera.position.y;
             evidence.climbTime += safeDt;
           }
 
           if (action === 'wall') {
-            if (wallJumpCooldown > 0.3 && !evidence.wallJumpStarted) {
+            if (motion.wallJumpCooldown > 0.3 && !evidence.wallJumpStarted) {
               evidence.wallJumpStarted = true;
               evidence.wallJumpStartPos.copy(camera.position);
             }
@@ -25385,7 +24229,7 @@ import {
 
           const stacks = activeAbilityStacks('parkourPlates');
           if (stacks > 0) {
-            velocityY *= Math.pow(1.18, stacks);
+            motion.velocityY *= Math.pow(1.18, stacks);
             showFeed(`PARKOUR PLATES • +${Math.round((Math.pow(1.18, stacks) - 1) * 100)}% PAD FORCE`, '#7dd3fc');
           }
           return result;
@@ -25398,7 +24242,7 @@ import {
 
           const stacks = activeAbilityStacks('parkourPlates');
           if (stacks > 0) {
-            velocityY *= Math.pow(1.18, stacks);
+            motion.velocityY *= Math.pow(1.18, stacks);
           }
           return result;
         };
@@ -25679,9 +24523,9 @@ import {
 
           if (abilityActive('adrenalineVault')) {
             const stacks = activeAbilityStacks('adrenalineVault');
-            const before = stamina;
-            stamina = Math.min(MAX_STAMINA, stamina + 20 * stacks);
-            const gained = Math.max(0, stamina - before);
+            const before = motion.stamina;
+            motion.stamina = Math.min(MAX_STAMINA, motion.stamina + 20 * stacks);
+            const gained = Math.max(0, motion.stamina - before);
             if (gained > 0) showFeed(`ADRENALINE VAULT +${Math.round(gained)} STAMINA`, '#fda4af');
           }
         };

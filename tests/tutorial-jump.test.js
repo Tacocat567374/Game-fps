@@ -3,9 +3,12 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 import * as THREE from 'three';
-import { JUMP_FORCE } from '../src/game/config/tuning.js';
+import { JUMP_FORCE, WALL_JUMP_PUSH, WALL_JUMP_FORCE, WALL_JUMP_COOLDOWN } from '../src/game/config/tuning.js';
+import { createInputState } from '../src/game/input/input-state.js';
+import { createMovementController } from '../src/game/movement/movement-controller.js';
 
-const source = readFileSync(new URL('../src/legacy/killshift-engine.js', import.meta.url), 'utf8');
+const source = readFileSync(new URL('../src/legacy/killshift-engine.js', import.meta.url), 'utf8') +
+  readFileSync(new URL('../src/game/movement/movement-controller.js', import.meta.url), 'utf8');
 
 function functionSource(name) {
   const match = new RegExp('function\\s+' + name + '\\s*\\(').exec(source);
@@ -32,9 +35,9 @@ function harness(overrides = {}) {
     JUMP_PAD_MIN_FORCE: 13,
     JUMP_PAD_FORCE_MULTIPLIER: 1.4,
     JUMP_PAD_JUMP_CUT_GRACE: 0.1,
-    WALL_JUMP_PUSH: 7,
-    WALL_JUMP_FORCE: 9,
-    WALL_JUMP_COOLDOWN: 0.4,
+    WALL_JUMP_PUSH,
+    WALL_JUMP_FORCE,
+    WALL_JUMP_COOLDOWN,
     alive: true,
     dying: false,
     grounded: true,
@@ -73,9 +76,25 @@ function harness(overrides = {}) {
     ...overrides
   };
   const context = vm.createContext(state);
+  context.playSound = (...args) => context.window.playSound(...args);
+  const movement = createMovementController({ input: createInputState(), engine: context });
+  context.motion = movement.state;
+  for (const key of Object.keys(movement.state)) {
+    if (Object.hasOwn(state, key)) movement.state[key] = state[key];
+    Object.defineProperty(context, key, {
+      get: () => movement.state[key],
+      set: value => { movement.state[key] = value; },
+      configurable: true
+    });
+  }
+  Object.assign(context, {
+    performParkourJump: movement.performParkourJump,
+    performAirJump: movement.performAirJump,
+    beginWallJump: movement.beginWallJump
+  });
   for (const name of [
     'completeTutorialStep', 'tutorialRegisterAction', 'verifyAction',
-    'tutorialMasteryGate', 'performParkourJump', 'performAirJump', 'beginWallJump'
+    'tutorialMasteryGate'
   ]) {
     vm.runInContext(functionSource(name), context, { filename: 'killshift-engine.js' });
   }
