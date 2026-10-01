@@ -1,5 +1,73 @@
 import * as THREE from 'three';
       import { PointerLockControls } from 'three/examples/jsm/controls/PointerLockControls.js';
+import { createWeaponData } from '../game/weapons/catalog.js';
+import { createRarityData } from '../game/weapons/rarity-data.js';
+import {
+  createCoreTuning,
+  MAX_STAMINA,
+  STAMINA_DRAIN,
+  STAMINA_REGEN,
+  STAMINA_REGEN_DELAY,
+  STAMINA_EXHAUSTED_THRESHOLD,
+  MANTLE_MIN_HEIGHT,
+  MANTLE_MAX_HEIGHT,
+  MANTLE_REACH,
+  MANTLE_CLEARANCE,
+  STAMINA_WARNING_COOLDOWN,
+  PARRY_WINDOW,
+  PARRY_RANGE,
+  PARRY_CONE_DOT,
+  PARRY_SPEED_MULTIPLIER,
+  PARRY_DAMAGE_MULTIPLIER,
+  SENTINEL_PARRY_BASE_CHANCE,
+  SENTINEL_PARRY_COOLDOWN,
+  SENTINEL_PARRY_MIN_DISTANCE,
+  SENTINEL_PARRY_MAX_DISTANCE,
+  SENTINEL_PARRY_DAMAGE_MULTIPLIER,
+  SENTINEL_PARRY_SPEED,
+  PLAYER_RADIUS,
+  PLAYER_EYE_HEIGHT,
+  JUMP_FORCE,
+  ASCENT_GRAVITY,
+  DESCENT_GRAVITY,
+  JUMP_CUT_MULTIPLIER,
+  JUMP_CUT_MIN_VELOCITY,
+  WALL_CLIMB_SPEED,
+  WALL_CLIMB_LOOK_THRESHOLD,
+  WALL_CONTACT_DISTANCE,
+  WALL_CLIMB_MAX_STEP,
+  WALL_RUN_SPEED,
+  WALL_RUN_DURATION,
+  WALL_RUN_MIN_SPEED,
+  WALL_RUN_JUMP_FORCE,
+  COMBO_DURATION,
+  WALK_SPEED,
+  AIR_SPEED_MULTIPLIER,
+  SPRINT_SPEED,
+  ACCELERATION,
+  DECELERATION,
+  SLIDE_SPEED,
+  SLIDE_DURATION,
+  SLIDE_COOLDOWN,
+  SLIDE_STAMINA_COST,
+  COYOTE_TIME,
+  JUMP_BUFFER_TIME,
+  AIR_ACCELERATION,
+  VAULT_MIN_SPEED,
+  VAULT_MAX_HEIGHT,
+  VAULT_ENTRY_DISTANCE,
+  VAULT_DURATION,
+  VAULT_COOLDOWN,
+  MANTLE_COOLDOWN,
+  WALL_JUMP_FORCE,
+  WALL_JUMP_PUSH,
+  WALL_JUMP_COOLDOWN,
+  LANDING_BOOST_SPEED,
+  HEADSHOT_MULTIPLIER,
+  NORMAL_FOV,
+  AIM_FOV,
+  SNIPER_AIM_FOV
+} from '../game/config/tuning.js';
 
       export function initKillshiftEngine() {
 
@@ -15,779 +83,10 @@ import * as THREE from 'three';
 
         window.PointerLockControls = PointerLockControls;
 
-                                      // WEAPON AUTHORING SCHEMA — these are the knobs available to every weapon.
-                                      // Existing weapons may omit fields; the initializer fills safe defaults.
-                                      const WEAPON_MAKING_DEFAULTS = {
-                                        damage: 25, rate: 500, mag: 10, reserve: 60, reload: 1400, range: 100, spread: 0.02,
-                                        projectileSpeed: 1, critChance: 0, critDamage: 2, statusPower: 1, abilityPower: 1, knockback: 1,
-                                        pellets: 1, burst: 1, chargeTime: 0, recoil: 1, falloffStart: 0.65, falloffEnd: 1,
-                                        headshotMultiplier: 2, pierceCount: 0, splashRadius: 0, splashFalloff: 0.5, homing: 0,
-                                        projectileGravity: 0, projectileLifetime: 0, chainTargets: 0, chainRange: 0, chainDamage: 0.65,
-                                        statusDuration: 0, burnDamage: 0, freezeTime: 0, poisonDamage: 0, poisonDuration: 0,
-                                        recoilRecovery: 1, movePenalty: 0, aimMultiplier: 1, hipSpreadMultiplier: 1,
-                                        rarity: 'common', color: 0xffffff, tags: [], uniqueAbility: null, uniqueSpecial: null
-                                      };
+      const { WEAPON_MAKING_DEFAULTS, W, START_LOADOUT } = createWeaponData();
 
-                                      const W = {
-                                        arc:{
-                                      name:'Arc Cannon',
-                                      icon:'⚡',
-                                      damage:62,
-                                      rate:420,
-                                      mag:8,
-                                      reserve:64,
-                                      reload:1450,
-                                      spread:.008,
-                                      range:105,
-                                      arc:true,
-                                      arcTargets:4,
-                                      arcRange:13,
-                                      arcDamage:.65
-                                    },
-                                    genesisCannon: {
-        name: 'Genesis Cannon',
-        icon: '🌟',
-        desc: 'Creates a radiant field that damages enemies and restores player health.',
-
-        damage: 260,
-        rate: 2400,
-        mag: 1,
-        reserve: 5,
-        reload: 2800,
-        spread: 0,
-        range: 220,
-
-        explosive: true,
-        radius: 16,
-
-        genesis: true,
-        genesisDuration: 7,
-        genesisDamage: 75,
-        genesisHealing: 9,
-        genesisTick: 0.75,
-
-        color: 0xfef08a
-      },
-                                    chronoSingularity: {
-        name: 'Chrono Singularity',
-        icon: '🕳️',
-        desc: 'Creates a temporal vortex that pulls in, damages, and freezes enemies.',
-
-        damage: 180,
-        rate: 2200,
-        mag: 1,
-        reserve: 6,
-        reload: 3000,
-        spread: 0,
-        range: 260,
-
-        explosive: true,
-        radius: 18,
-
-        chrono: true,
-        chronoDuration: 5,
-        chronoDamage: 55,
-        chronoSlow: 0.12,
-        chronoPullStrength: 7,
-
-        color: 0x67e8f9
-      },
-      soulReaper: {
-        name: 'Soul Reaper',
-        icon: '☠️',
-        desc: 'Kills restore health. Every third shot creates a gravity vortex.',
-
-        damage: 70,
-        rate: 420,
-        mag: 18,
-        reserve: 108,
-        reload: 1400,
-        spread: 0.02,
-        range: 150,
-        color: 0x8b5cf6,
-
-        uniqueAbility: 'soulHarvest',
-        uniqueSpecial: 'gravityVortex',
-
-        specialEvery: 3,
-        specialRadius: 10,
-        specialDamage: 45,
-        specialCooldown: 5
-      },
-                                    'void': {
-                                      name: 'Void Blaster',
-                                      icon: '🟣',
-                                      damage: 85,
-                                      rate: 700,
-                                      mag: 6,
-                                      reserve: 42,
-                                      reload: 1700,
-                                      spread: 0.006,
-                                      range: 130,
-                                      void: true,
-                                      radius: 6
-                                    },
-
-                                    cryo:{
-                                      name:'Cryo Shotgun',
-                                      icon:'❄️',
-                                      damage:22,
-                                      pellets:8,
-                                      rate:700,
-                                      mag:6,
-                                      reserve:48,
-                                      reload:1450,
-                                      spread:.095,
-                                      range:62,
-                                      freeze:true,
-                                      freezeTime:2.5
-                                    },
-                                  medkit: {
-                                name: 'Medkit',
-                                icon: '🩹',
-                                damage: 0,
-                                heal: 40,
-                                rate: 600,
-                                mag: 5,
-                                reserve: 0,
-                                reload: Infinity,
-                                spread: 0,
-                                range: 0,
-                                medkit: true
-                              },
-
-                              bandage: {
-                                name: 'Bandage',
-                                icon: '🩹',
-                                damage: 0,
-                                heal: 20,
-                                rate: 700,
-                                mag: 5,
-                                reserve: 0,
-                                reload: Infinity,
-                                spread: 0,
-                                range: 0,
-                                bandage: true
-                              },
-
-                                    bigwhammies:{
-                                      name:'BIG WHAMMIES',
-                                      icon:'🐯️',
-                                      damage:40,
-                                      pellets:100,
-                                      rate:700,
-                                      mag:10,
-                                      reserve:48,
-                                      reload:1450,
-                                      spread:1,
-                                      range:62,
-                                    crit:true,
-                                    },
-                                    littlewhammies:{
-                                      name:'LITTLE WHAMMIES',
-                                      icon:'🤏',
-                                      damage:22,
-                                      pellets:30,
-                                      rate:700,
-                                      mag:6,
-                                      reserve:48,
-                                      reload:1450,
-                                      spread:.03,
-                                      range:62,
-                                      crit:true,
-                                    },
-
-                                    inferno:{
-                                      name:'Inferno Rifle',
-                                      icon:'🔥',
-                                      damage:28,
-                                      rate:110,
-                                      mag:32,
-                                      reserve:192,
-                                      reload:1350,
-                                      spread:.018,
-                                      range:125,
-                                      auto:true,
-                                      burn:true,
-                                      burnDamage:8,
-                                      burnTime:3
-                                    },
-
-                                    gravity:{
-                                      name:'Gravity Gun',
-                                      icon:'🌀',
-                                      damage:35,
-                                      rate:900,
-                                      mag:5,
-                                      reserve:35,
-                                      reload:1600,
-                                      spread:0,
-                                      range:80,
-                                      gravityGun:true,
-                                      pullRadius:10
-                                    },
-
-                                    rail:{
-                                      name:'Overcharged Railgun',
-                                      icon:'💠',
-                                      damage:260,
-                                      rate:1800,
-                                      mag:2,
-                                      reserve:20,
-                                      reload:2200,
-                                      spread:0,
-                                      range:350,
-                                      pierce:true,
-                                      rail:true,
-                                      knockback:8
-                                    },
-
-                                    meteor:{
-                                      name:'Meteor Launcher',
-                                      icon:'☄️',
-                                      damage:320,
-                                      rate:1600,
-                                      mag:2,
-                                      reserve:12,
-                                      reload:2000,
-                                      spread:0,
-                                      range:250,
-                                      explosive:true,
-                                      radius:16,
-                                      meteor:true
-                                    },
-
-                                    blade:{
-                                      name:'Energy Blade',
-                                      icon:'⚔️',
-                                      damage:130,
-                                      rate:300,
-                                      mag:1,
-                                      reserve:Infinity,
-                                      reload:0,
-                                      spread:0,
-                                      range:7,
-                                      melee:true,
-                                      energySlash:true
-                                    },
-
-                                    venom:{
-                                      name:'Venom SMG',
-                                      icon:'☠️',
-                                      damage:15,
-                                      rate:75,
-                                      mag:45,
-                                      reserve:225,
-                                      reload:1100,
-                                      spread:.028,
-                                      range:90,
-                                      auto:true,
-                                      poison:true,
-                                      poisonDamage:6,
-                                      poisonTime:4
-                                    },
-
-                                        pulse: {
-                                      name: 'Pulse Rifle',
-                                      icon: '🟩',
-                                      damage: 38,
-                                      rate: 160,
-                                      mag: 36,
-                                      reserve: 216,
-                                      reload: 1300,
-                                      spread: 0.012,
-                                      range: 180,
-                                      auto: true,
-                                      pulse: true
-                                    },
-
-                                    burstPistol: {
-                                      name: 'Burst Pistol',
-                                      icon: '🔹',
-                                      damage: 24,
-                                      rate: 520,
-                                      burst: 3,
-                                      mag: 18,
-                                      reserve: 144,
-                                      reload: 1150,
-                                      spread: 0.018,
-                                      range: 110
-                                    },
-                                    nuke:{
-                                     name:'TACTICAL NUKE',
-                                     icon:'☢️',
-                                     damage:99999,
-                                     rate:5000,
-                                     mag:1,
-                                     reserve:1,
-                                     reload:5000,
-                                     spread:0,
-                                     range:500,
-                                     explosive:true,
-                                     radius:75,
-                                     nuke:true
-                                    },
-                                    goldenPistol:{
-                                      name:'Golden Eagle Pistol',
-                                      icon:'🟨',
-                                      damage:42,
-                                      rate:220,
-                                      mag:14,
-                                      reserve:140,
-                                      reload:900,
-                                      spread:.008,
-                                      range:120,
-                                      crit:true
-                                    },
-
-                                    plasmaPistol:{
-                                      name:'Plasma Pistol',
-                                      icon:'🔵',
-                                      damage:55,
-                                      rate:300,
-                                      mag:10,
-                                      reserve:100,
-                                      reload:1100,
-                                      spread:.006,
-                                      range:150,
-                                      explosive:true,
-                                      radius:3
-                                    },
-
-                                    shadowPistol:{
-                                      name:'Shadow Pistol',
-                                      icon:'⚫',
-                                      damage:70,
-                                      rate:260,
-                                      mag:8,
-                                      reserve:80,
-                                      reload:1000,
-                                      spread:.004,
-                                      range:180,
-                                      pierce:true
-                                    },
-
-                                    rapidPistol:{
-                                      name:'Rapid Fire Pistol',
-                                      icon:'🔫',
-                                      damage:24,
-                                      rate:90,
-                                      mag:32,
-                                      reserve:256,
-                                      reload:950,
-                                      spread:.025,
-                                      range:100,
-                                      auto:true
-                                    },
-
-                                    voidPistol:{
-                                      name:'Void Hand Cannon',
-                                      icon:'🟣',
-                                      damage:120,
-                                      rate:600,
-                                      mag:5,
-                                      reserve:40,
-                                      reload:1500,
-                                      spread:.002,
-                                      range:220,
-                                      void:true,
-                                      radius:5
-                                    },
-
-                                    omegaPistol:{
-                                      name:'Omega Pistol',
-                                      icon:'⚛️',
-                                      damage:160,
-                                      rate:850,
-                                      mag:3,
-                                      reserve:30,
-                                      reload:1800,
-                                      spread:0,
-                                      range:300,
-                                      pierce:true,
-                                      explosive:true,
-                                      radius:4
-                                    },
-
-                                    scatterCannon: {
-                                      name: 'Scatter Cannon',
-                                      icon: '🟧',
-                                      damage: 18,
-                                      pellets: 14,
-                                      rate: 900,
-                                      mag: 4,
-                                      reserve: 40,
-                                      reload: 1800,
-                                      spread: 0.14,
-                                      range: 65
-                                    },
-
-                                        pistol:{name:'Pistol',icon:'🔫',damage:28,rate:240,mag:12,reserve:96,reload:1000,spread:.012,range:90},
-                                            laser:{name:'Laser Rifle',icon:'🔴',damage:34,rate:120,mag:28,reserve:140,reload:1250,spread:.006,range:190,auto:true},
-                                        dual:{name:'Dual Pistols',icon:'🔫',damage:20,rate:130,mag:24,reserve:144,reload:1200,spread:.022,range:95,auto:true},
-                                        shockwave:{name:'Shockwave Cannon',icon:'🌊',damage:110,rate:800,mag:4,reserve:28,reload:1500,spread:.03,range:55,explosive:true,radius:7},
-                                        minigun:{name:'Minigun',icon:'🟠',damage:15,rate:45,mag:120,reserve:480,reload:2800,spread:.045,range:120,auto:true},
-                                        freeze:{name:'Freeze Ray',icon:'❄️',damage:18,rate:100,mag:35,reserve:210,reload:1500,spread:.012,range:100,auto:false,freeze:true,freezeTime:5},
-                                        boomerang:{name:'Boomerang Blade',icon:'🌀',damage:95,rate:650,mag:2,reserve:12,reload:1200,spread:0,range:100,pierce:true},
-                                        rifle:{name:'Rifle',icon:'🔫',damage:22,rate:95,mag:30,reserve:150,reload:1150,spread:.010,range:130,auto:true},
-                                        shotgun:{name:'Shotgun',icon:'💥',damage:14,pellets:9,rate:650,mag:6,reserve:48,reload:1350,spread:.10,range:58},
-                                        smg:{name:'SMG',icon:'🟦',damage:12,rate:68,mag:40,reserve:180,reload:1050,spread:.026,range:82,auto:true},
-                                        elementaloverpowerde:{name:'Elemental Cannon',icon:'🌊',damage:5,rate:800,mag:1000,reserve:1000,reload:1050,spread:0,range:82,
-                                          poison:true,poisonDamage:6,poisonTime:9999999,
-                                          freeze:true,freezeTime:99999999,
-                                          burn:true,burnDamage:8,burnTime:9999999999},
-                                       sniper: {
-                          name: 'Sniper',
-                          icon: '🎯',
-                          damage: 100,
-                          headshotMultiplier: 3,
-                          rate: 1000,
-                          mag: 5,
-                          reserve: 35,
-                          reload: 1650,
-                          spread: 0.0015,
-                          range: 240
-                        },
-
-                                        grenade:{name:'Grenade',icon:'💣',damage:150,rate:900,mag:2,reserve:10,reload:1500,spread:0,range:34,explosive:true,radius:10},
-                                       flash: {
-                          name: 'Flash Grenade',
-                          icon: '✨',
-                          damage: 12,
-                          rate: 850,
-                          mag: 2,
-                          reserve: 10,
-                          reload: 1350,
-                          spread: 0,
-                          range: 30,
-                          radius: 10,
-                          flash: true
-                        },
-
-                                        rocket:{name:'Rocket Launcher',icon:'🚀',damage:240,rate:1150,mag:1,reserve:8,reload:1650,spread:.006,range:200,explosive:true,radius:14},
-                                        knife:{name:'Knife',icon:'🔪',damage:75,rate:360,mag:1,reserve:Infinity,reload:0,spread:0,range:5.5,melee:true},
-                                        lmg:{name:'LMG',icon:'🟫',damage:19,rate:100,mag:75,reserve:300,reload:2000,spread:.030,range:115,auto:true},
-                                        burst:{name:'Burst Rifle',icon:'⚡',damage:24,rate:390,burst:3,mag:24,reserve:150,reload:1350,spread:.015,range:145},
-                                        railgun:{name:'Railgun',icon:'🔷',damage:180,rate:1450,mag:3,reserve:24,reload:2100,spread:0,range:290,pierce:true},
-                                        flamethrower:{name:'Flamethrower',icon:'🔥',damage:10,rate:55,mag:100,reserve:360,reload:1950,spread:.075,range:27,flame:true,auto:true,flameTick:7},
-                                        mine:{name:'Proximity Mine',icon:'🧨',damage:180,rate:700,mag:2,reserve:12,reload:1550,spread:0,range:20,mine:true,radius:11},
-                                        plasma:{name:'Plasma Gun',icon:'🟢',damage:42,rate:300,mag:20,reserve:120,reload:1400,spread:.008,range:155,explosive:true,radius:4,auto:true},
-                                        crossbow:{name:'Crossbow',icon:'🏹',damage:145,rate:850,mag:1,reserve:24,reload:1200,spread:0,range:210,pierce:true},
-                                        cluster:{name:'Cluster Grenade',icon:'🟣',damage:85,rate:1000,mag:2,reserve:8,reload:1600,spread:0,range:35,explosive:true,radius:9,cluster:true}
-                                      };
-                                    const START_LOADOUT = ['rifle', 'shotgun', 'smg', 'grenade', 'rocket'];
-                                    Object.assign(W, {
-                                      solarFlare: {
-                                        name: 'Solar Flare',
-                                        icon: '☀️',
-                                        damage: 180,
-                                        rate: 1200,
-                                        mag: 3,
-                                        reserve: 18,
-                                        reload: 1700,
-                                        spread: 0.01,
-                                        range: 180,
-                                        explosive: true,
-                                        radius: 12,
-                                        color: 0xffb000
-                                      },
-
-                                      teslaCoil: {
-                                        name: 'Tesla Coil',
-                                        icon: '⚡',
-                                        damage: 48,
-                                        rate: 500,
-                                        mag: 12,
-                                        reserve: 72,
-                                        reload: 1400,
-                                        spread: 0.01,
-                                        range: 120,
-                                        arc: true,
-                                        arcTargets: 5,
-                                        arcRange: 15,
-                                        arcDamage: 0.7
-                                      },
-
-                                      voidNova: {
-                                        name: 'Void Nova',
-                                        icon: '🌌',
-                                        damage: 110,
-                                        rate: 950,
-                                        mag: 4,
-                                        reserve: 28,
-                                        reload: 1800,
-                                        spread: 0,
-                                        range: 150,
-                                        void: true,
-                                        radius: 8
-                                      },
-
-                                      frostBurst: {
-                                        name: 'Frost Burst',
-                                        icon: '🧊',
-                                        damage: 30,
-                                        pellets: 10,
-                                        rate: 780,
-                                        mag: 5,
-                                        reserve: 45,
-                                        reload: 1600,
-                                        spread: 0.11,
-                                        range: 65,
-                                        freeze: true,
-                                        freezeTime: 4
-                                      },
-
-                                      plagueCaster: {
-                                        name: 'Plague Caster',
-                                        icon: '🦠',
-                                        damage: 35,
-                                        rate: 360,
-                                        mag: 16,
-                                        reserve: 96,
-                                        reload: 1450,
-                                        spread: 0.025,
-                                        range: 125,
-                                        poison: true,
-                                        poisonDamage: 12,
-                                        poisonTime: 6
-                                      },
-
-                                      magmaRepeater: {
-                                        name: 'Magma Repeater',
-                                        icon: '🌋',
-                                        damage: 32,
-                                        rate: 145,
-                                        mag: 26,
-                                        reserve: 156,
-                                        reload: 1500,
-                                        spread: 0.022,
-                                        range: 135,
-                                        auto: true,
-                                        burn: true,
-                                        burnDamage: 11,
-                                        burnTime: 4
-                                      },
-
-                                      thunderHammer: {
-                                        name: 'Thunder Hammer',
-                                        icon: '🔨',
-                                        damage: 190,
-                                        rate: 720,
-                                        mag: 1,
-                                        reserve: Infinity,
-                                        reload: 0,
-                                        spread: 0,
-                                        range: 8,
-                                        melee: true,
-                                        energySlash: true
-                                      },
-
-                                      cometLauncher: {
-                                        name: 'Comet Launcher',
-                                        icon: '🌠',
-                                        damage: 390,
-                                        rate: 1900,
-                                        mag: 2,
-                                        reserve: 14,
-                                        reload: 2200,
-                                        spread: 0,
-                                        range: 300,
-                                        meteor: true,
-                                        radius: 18
-                                      },
-
-                                      sonicBoom: {
-                                        name: 'Sonic Boom',
-                                        icon: '🔊',
-                                        damage: 125,
-                                        rate: 1000,
-                                        mag: 5,
-                                        reserve: 35,
-                                        reload: 1650,
-                                        spread: 0.02,
-                                        range: 75,
-                                        explosive: true,
-                                        radius: 9
-                                      },
-
-                                      ricochetCannon: {
-                                        name: 'Ricochet Cannon',
-                                        icon: '🔄',
-                                        damage: 95,
-                                        rate: 650,
-                                        mag: 8,
-                                        reserve: 64,
-                                        reload: 1350,
-                                        spread: 0.01,
-                                        range: 220,
-                                        pierce: true
-                                      },
-
-                                      plasmaBurst: {
-                                        name: 'Plasma Burst',
-                                        icon: '🟢',
-                                        damage: 70,
-                                        rate: 420,
-                                        burst: 3,
-                                        mag: 15,
-                                        reserve: 90,
-                                        reload: 1550,
-                                        spread: 0.015,
-                                        range: 170,
-                                        auto: false,
-                                        explosive: true,
-                                        radius: 4
-                                      },
-
-                                      acidSprayer: {
-                                        name: 'Acid Sprayer',
-                                        icon: '🧪',
-                                        damage: 9,
-                                        rate: 60,
-                                        mag: 90,
-                                        reserve: 360,
-                                        reload: 2100,
-                                        spread: 0.085,
-                                        range: 32,
-                                        auto: true,
-                                        poison: true,
-                                        poisonDamage: 8,
-                                        poisonTime: 5
-                                      },
-
-                                      photonLance: {
-                                        name: 'Photon Lance',
-                                        icon: '🔆',
-                                        damage: 230,
-                                        rate: 1550,
-                                        mag: 3,
-                                        reserve: 24,
-                                        reload: 1900,
-                                        spread: 0,
-                                        range: 320,
-                                        pierce: true,
-                                        knockback: 10
-                                      },
-
-                                      gravityNova: {
-                                        name: 'Gravity Nova',
-                                        icon: '🌀',
-                                        damage: 75,
-                                        rate: 1100,
-                                        mag: 4,
-                                        reserve: 32,
-                                        reload: 1800,
-                                        spread: 0,
-                                        range: 100,
-                                        gravityGun: true,
-                                        pullRadius: 16
-                                      },
-
-                                      wildfire: {
-                                        name: 'Wildfire Projector',
-                                        icon: '🔥',
-                                        damage: 15,
-                                        rate: 48,
-                                        mag: 120,
-                                        reserve: 420,
-                                        reload: 2300,
-                                        spread: 0.09,
-                                        range: 30,
-                                        auto: true,
-                                        flame: true,
-                                        flameTick: 12,
-                                        burn: true,
-                                        burnDamage: 10,
-                                        burnTime: 4
-                                      },
-
-                                      starfall: {
-                                        name: 'Starfall',
-                                        icon: '✨',
-                                        damage: 500,
-                                        rate: 2600,
-                                        mag: 1,
-                                        reserve: 8,
-                                        reload: 2800,
-                                        spread: 0,
-                                        range: 380,
-                                        meteor: true,
-                                        radius: 22
-                                      },
-
-                                      chainFrost: {
-                                        name: 'Chain Frost',
-                                        icon: '❄️',
-                                        damage: 42,
-                                        rate: 600,
-                                        mag: 10,
-                                        reserve: 70,
-                                        reload: 1500,
-                                        spread: 0.012,
-                                        range: 145,
-                                        arc: true,
-                                        arcTargets: 6,
-                                        arcRange: 18,
-                                        arcDamage: 0.55,
-                                        freeze: true,
-                                        freezeTime: 2
-                                      },
-
-                                      bioRocket: {
-                                        name: 'Bio Rocket',
-                                        icon: '☣️',
-                                        damage: 210,
-                                        rate: 1300,
-                                        mag: 2,
-                                        reserve: 16,
-                                        reload: 1750,
-                                        spread: 0.008,
-                                        range: 190,
-                                        explosive: true,
-                                        radius: 13,
-                                        poison: true,
-                                        poisonDamage: 10,
-                                        poisonTime: 5
-                                      },
-
-                                      eclipseBlade: {
-                                        name: 'Eclipse Blade',
-                                        icon: '🌑',
-                                        damage: 240,
-                                        rate: 430,
-                                        mag: 1,
-                                        reserve: Infinity,
-                                        reload: 0,
-                                        spread: 0,
-                                        range: 9,
-                                        melee: true,
-                                        energySlash: true
-                                      },
-
-                                      antimatterRifle: {
-                                        name: 'Antimatter Rifle',
-                                        icon: '⚛️',
-                                        damage: 420,
-                                        rate: 2100,
-                                        mag: 2,
-                                        reserve: 18,
-                                        reload: 2400,
-                                        spread: 0,
-                                        range: 400,
-                                        pierce: true,
-                                        explosive: true,
-                                        radius: 6
-                                      }
-                                    });
-                        const DUPLICATE_WEAPON_VALUES = {
-                          common: 10,
-                          uncommon: 25,
-                          rare: 60,
-                          epic: 150,
-                          legendary: 400,
-                          mythic: 1000,
-                          divine: 2500
-                        };
+      const { DUPLICATE_WEAPON_VALUES, RARITIES, RARITY_ORDER,
+        RARITY_AFFIXES, RARITY_SYSTEM, weaponRarities, rarityNames } = createRarityData();
 
                         function getDuplicateWeaponValue(rarity) {
                           return DUPLICATE_WEAPON_VALUES[rarity] ??
@@ -812,42 +111,6 @@ import * as THREE from 'three';
                               coins.toLocaleString();
                           }
                         }
-
-                                    // RARITY 2.0
-                                    // Every tier is data-driven so new weapons can be authored without hard-coding
-                                    // balance rules throughout the combat code.  fireRate is a multiplier to the
-                                    // weapon's shots-per-minute style cooldown: higher = faster.
-                                    const RARITIES = {
-                                      common:    { color: 0x94a3b8, damage: 1.00, fireRate: 1.00, ammo: 1.00, reload: 1.00, range: 1.00, spread: 1.00, critChance: 0.00, critDamage: 1.00, projectileSpeed: 1.00, statusPower: 1.00, abilityPower: 1.00, dropWeight: 520, minWave: 1,  power: 0,  statRoll: 0.00, affixSlots: 0 },
-                                      uncommon:  { color: 0x22c55e, damage: 1.18, fireRate: 1.08, ammo: 1.18, reload: 0.96, range: 1.04, spread: 0.97, critChance: 0.01, critDamage: 1.05, projectileSpeed: 1.05, statusPower: 1.08, abilityPower: 1.08, dropWeight: 300, minWave: 1,  power: 1, statRoll: 0.03, affixSlots: 1 },
-                                      rare:      { color: 0x3b82f6, damage: 1.38, fireRate: 1.17, ammo: 1.38, reload: 0.92, range: 1.08, spread: 0.94, critChance: 0.025, critDamage: 1.12, projectileSpeed: 1.10, statusPower: 1.18, abilityPower: 1.18, dropWeight: 150, minWave: 3, power: 2, statRoll: 0.06, affixSlots: 1 },
-                                      epic:      { color: 0xa855f7, damage: 1.68, fireRate: 1.29, ammo: 1.68, reload: 0.87, range: 1.13, spread: 0.90, critChance: 0.045, critDamage: 1.22, projectileSpeed: 1.16, statusPower: 1.30, abilityPower: 1.32, dropWeight: 65,  minWave: 8, power: 3, statRoll: 0.09, affixSlots: 2 },
-                                      legendary: { color: 0xf59e0b, damage: 2.05, fireRate: 1.43, ammo: 2.05, reload: 0.81, range: 1.19, spread: 0.86, critChance: 0.07, critDamage: 1.35, projectileSpeed: 1.23, statusPower: 1.45, abilityPower: 1.50, dropWeight: 25,  minWave: 14, power: 4, statRoll: 0.13, affixSlots: 3 },
-                                      mythic:    { color: 0xef4444, damage: 2.55, fireRate: 1.62, ammo: 2.55, reload: 0.74, range: 1.26, spread: 0.82, critChance: 0.10, critDamage: 1.50, projectileSpeed: 1.32, statusPower: 1.65, abilityPower: 1.75, dropWeight: 8,   minWave: 22, power: 5, statRoll: 0.18, affixSlots: 4 },
-                                      divine:    { color: 0xffffff, damage: 3.15, fireRate: 1.86, ammo: 3.10, reload: 0.66, range: 1.34, spread: 0.76, critChance: 0.14, critDamage: 1.70, projectileSpeed: 1.45, statusPower: 1.90, abilityPower: 2.05, dropWeight: 2,   minWave: 35, power: 6, statRoll: 0.24, affixSlots: 5 }
-                                    };
-
-                                    const RARITY_ORDER = ['common','uncommon','rare','epic','legendary','mythic','divine'];
-                                    const RARITY_AFFIXES = {
-                                      damage:        { label:'Overcharged', stat:'damage', min:1.04, max:1.12 },
-                                      fireRate:      { label:'Rapid', stat:'fireRate', min:1.03, max:1.08 },
-                                      reload:        { label:'Quickload', stat:'reload', min:0.92, max:0.97 },
-                                      magazine:      { label:'Extended', stat:'mag', min:1.05, max:1.16 },
-                                      range:         { label:'Longshot', stat:'range', min:1.04, max:1.12 },
-                                      crit:          { label:'Precision', stat:'critChance', min:0.015, max:0.035 },
-                                      projectile:    { label:'Accelerated', stat:'projectileSpeed', min:1.04, max:1.10 },
-                                      status:        { label:'Infused', stat:'statusPower', min:1.06, max:1.16 },
-                                      ability:       { label:'Amplified', stat:'abilityPower', min:1.06, max:1.18 }
-                                    };
-
-                                    const RARITY_SYSTEM = {
-                                      luckPerPoint: 0.018,
-                                      pityStart: 18,
-                                      pityStep: 0.045,
-                                      guaranteed: { rare: 8, epic: 18, legendary: 35, mythic: 65, divine: 100 },
-                                      duplicateSalvageMultiplier: 1.0,
-                                      qualityVariance: true
-                                    };
 
                                     let rarityState = {
                                       luck: 0,
@@ -911,91 +174,6 @@ import * as THREE from 'three';
                                       return Math.max(0.01, 1 + variance);
                                     }
 
-                                   const weaponRarities = {
-        // COMMON
-        pistol: 'common',
-        rifle: 'common',
-        shotgun: 'common',
-        smg: 'common',
-        knife: 'common',
-        burstPistol: 'common',
-        burst: 'common',
-        dual: 'common',
-        bandage: 'common',
-
-        // UNCOMMON
-        lmg: 'uncommon',
-        laser: 'uncommon',
-        minigun: 'uncommon',
-        pulse: 'uncommon',
-        scatterCannon: 'uncommon',
-        grenade: 'uncommon',
-        flash: 'uncommon',
-        cluster: 'uncommon',
-        freeze: 'uncommon',
-        flamethrower: 'uncommon',
-        crossbow: 'uncommon',
-        medkit: 'uncommon',
-
-        // RARE
-        sniper: 'rare',
-        rocket: 'rare',
-        mine: 'rare',
-        plasma: 'rare',
-        goldenPistol: 'rare',
-        venom: 'rare',
-        inferno: 'rare',
-        magmaRepeater: 'rare',
-        cryo: 'rare',
-        plagueCaster: 'rare',
-        acidSprayer: 'rare',
-        frostBurst: 'rare',
-        arc: 'rare',
-        shockwave: 'rare',
-        sonicBoom: 'rare',
-        boomerang: 'rare',
-        soulReaper: 'rare',
-        littlewhammies: 'rare',
-
-        // EPIC
-        railgun: 'epic',
-        rail: 'epic',
-        void: 'epic',
-        voidPistol: 'epic',
-        plasmaPistol: 'epic',
-        voidNova: 'epic',
-        gravity: 'epic',
-        gravityNova: 'epic',
-        teslaCoil: 'epic',
-        chainFrost: 'epic',
-        ricochetCannon: 'epic',
-        plasmaBurst: 'epic',
-        solarFlare: 'epic',
-        photonLance: 'epic',
-        blade: 'epic',
-        bigwhammies: 'epic',
-
-        // LEGENDARY
-        meteor: 'legendary',
-        cometLauncher: 'legendary',
-        wildfire: 'legendary',
-        bioRocket: 'legendary',
-        omegaPistol: 'legendary',
-        thunderHammer: 'legendary',
-        eclipseBlade: 'legendary',
-        elementaloverpowerde: 'legendary',
-
-        // MYTHIC
-        starfall: 'mythic',
-        antimatterRifle: 'mythic',
-
-        // DIVINE
-        nuke: 'divine',
-        chronoSingularity: 'divine',
-      genesisCannon: 'divine'
-
-      };
-
                                     for (const key in weaponRarities) {
 
                                       if (W[key]) {
@@ -1003,16 +181,6 @@ import * as THREE from 'three';
                                       }
 
                                     }
-
-                                    const rarityNames = {
-                                      common: "COMMON",
-                                      uncommon: "UNCOMMON",
-                                      rare: "RARE",
-                                      epic: "EPIC",
-                                      legendary: "LEGENDARY",
-                                      mythic: "MYTHIC",
-                                      divine: "DIVINE"
-                                    };
 
                                     const rarityColors = Object.fromEntries(
                                       Object.entries(RARITIES).map(([name, data]) => [
@@ -1144,11 +312,6 @@ import * as THREE from 'three';
                                     let moveVelocityX=0;
                                     let moveVelocityZ=0;
 
-      const MAX_STAMINA = 100;
-      const STAMINA_DRAIN = 24;
-      const STAMINA_REGEN = 18;
-      const STAMINA_REGEN_DELAY = 0.35;
-      const STAMINA_EXHAUSTED_THRESHOLD = 25;
       let mantling = false;
       let mantleTimer = 0;
       let mantleDuration = 0.28;
@@ -1158,16 +321,11 @@ import * as THREE from 'three';
       const mantleEndPosition = new THREE.Vector3();
       const mantleDirection = new THREE.Vector3();
 
-      const MANTLE_MIN_HEIGHT = 0.45;
-      const MANTLE_MAX_HEIGHT = 2.55;
-      const MANTLE_REACH = 1.45;
-      const MANTLE_CLEARANCE = 0.08;
 
       let stamina = MAX_STAMINA;
       let staminaRegenDelay = 0;
       let sprintExhausted = false;
       let staminaWarningCooldown = 0;
-      const STAMINA_WARNING_COOLDOWN = 0.75;
 
                                     let coins = 0;
                                     let activeRoundModifier = null;
@@ -1195,20 +353,7 @@ import * as THREE from 'three';
                                     let rerollUsed = false;
 
                                     const REROLL_COST = 50;
-                        const PARRY_WINDOW = 0.18;
-                        const PARRY_RANGE = 7.5;
-                        const PARRY_CONE_DOT = 0.35;
-                        const PARRY_SPEED_MULTIPLIER = 1.65;
-                        const PARRY_DAMAGE_MULTIPLIER = 1.5;
 
-                        const SENTINEL_PARRY_BASE_CHANCE = 0.42;
-                        const SENTINEL_PARRY_COOLDOWN = 1.25;
-                        const SENTINEL_PARRY_MIN_DISTANCE = 3;
-                        const SENTINEL_PARRY_MAX_DISTANCE = 30;
-                        const SENTINEL_PARRY_DAMAGE_MULTIPLIER = 1.5;
-                        const SENTINEL_PARRY_SPEED = 12;
-            const PLAYER_RADIUS = 0.55;
-            const PLAYER_EYE_HEIGHT = 1.7;
       function isSprintHeld() {
         return isSprintKeyDown();
       }
@@ -1378,32 +523,11 @@ import * as THREE from 'three';
         renderStaminaHud();
       }
 
-            const CORE_TUNING = {
-              fireSpreadMultiplier: 0.88,
-              earlyWaveEnemyScale: 0.92,
-              lateWaveEnemyScale: 1.05,
-              spawnDelayFloor: 120,
-              enemyBulletBias: 0.92,
-              playerReloadBias: 0.96
-            };
+      const CORE_TUNING = createCoreTuning();
 
-          const JUMP_FORCE = 10.5;
-      const ASCENT_GRAVITY = 24;
-      const DESCENT_GRAVITY = 30;
-      const JUMP_CUT_MULTIPLIER = 0.78;
-      const JUMP_CUT_MIN_VELOCITY = 2.25;
 
-            const WALL_CLIMB_SPEED = 4.2;
-            const WALL_CLIMB_LOOK_THRESHOLD = 0.28;
-            const WALL_CONTACT_DISTANCE = 0.18;
-            const WALL_CLIMB_MAX_STEP = 0.45;
-            const WALL_RUN_SPEED = 8.5;
-            const WALL_RUN_DURATION = 1.15;
-            const WALL_RUN_MIN_SPEED = 4.5;
-            const WALL_RUN_JUMP_FORCE = 9.5;
             let comboCount = 0;
             let comboTimer = 0;
-            const COMBO_DURATION = 3.2;
             const weaponAbilityState = {
         lastTarget: null,
         consecutiveHits: 0,
@@ -3095,31 +2219,9 @@ import * as THREE from 'three';
                                       row.title = `${ability.name} — owned ${ownedCount}/${maxOwned}`;
                                     }
 
-                        const WALK_SPEED = 4.5;
-                        const AIR_SPEED_MULTIPLIER = 0.72;
 
-                        const SPRINT_SPEED = 8.0;
-                        const ACCELERATION = 14;
-                        const DECELERATION = 18;
 
-                        const SLIDE_SPEED = 12.5;
-                        const SLIDE_DURATION = 0.65;
-                        const SLIDE_COOLDOWN = 0.35;
-                        const SLIDE_STAMINA_COST = 12;
 
-                        const COYOTE_TIME = 0.14;
-                        const JUMP_BUFFER_TIME = 0.16;
-                        const AIR_ACCELERATION = 7.5;
-                        const VAULT_MIN_SPEED = 4.5;
-                        const VAULT_MAX_HEIGHT = 1.65;
-                        const VAULT_ENTRY_DISTANCE = 1.35;
-                        const VAULT_DURATION = 0.32;
-                        const VAULT_COOLDOWN = 0.20;
-                        const MANTLE_COOLDOWN = 0.28;
-                        const WALL_JUMP_FORCE = 11.5;
-                        const WALL_JUMP_PUSH = 7.0;
-                        const WALL_JUMP_COOLDOWN = 0.18;
-                        const LANDING_BOOST_SPEED = 0.6;
 
                         let sliding = false;
                         let slideTimer = 0;
@@ -3136,11 +2238,7 @@ import * as THREE from 'three';
                         let wasGrounded = true;
                         const slideDirection = new THREE.Vector3();
 
-                                   const HEADSHOT_MULTIPLIER = 2;
 
-                                    const NORMAL_FOV=75;
-                                    const AIM_FOV=55;
-                                    const SNIPER_AIM_FOV=12;
                                     function rarityHex(rarity) {
                                       const color = rarityColors[rarity] ?? rarityColors.common;
                                       return `#${color.toString(16).padStart(6, '0')}`;
