@@ -50,4 +50,17 @@ The engine still starts through `src/main.js` and keeps runtime state, QA hooks,
 
 The weapon and rarity modules use factories so each engine initialization receives fresh mutable objects. Weapon stat initialization, rarity application, save restoration, and runtime behavior still execute in the legacy engine. `npm test` checks the original catalog/rarity data and representative tuning values with Node's built-in runner.
 
-Ability definitions, round modifiers, map configuration, and other static tables remain in the legacy file because they are extended or consumed across runtime systems. A focused second pass can extract the base ability catalog and its later extension together, preserving the mutable catalog identity and save IDs, before touching input or movement behavior.
+At the end of Pass 1, ability definitions, round modifiers, map configuration, and other static tables still lived in the legacy file because they were extended or consumed across runtime systems. Pass 2 extracts the base ability catalog and its later extension together while preserving mutable catalog identity and save IDs.
+
+## Modularization Pass 2
+
+The 33 original ability definitions and six later additions now live together in
+src/game/abilities/catalog.js. createAbilityCatalog() appends the six in their
+original order and returns fresh mutable definitions for each engine initialization.
+The engine still owns ability effects, shop and save behavior, and the existing
+runtime corrections to several ability contracts.
+
+tests/fixtures/ability-catalog-baseline.json records the pre-refactor IDs,
+insertion order, metadata, and function-hook sources. Node tests compare the
+factory to that baseline and exercise representative hooks and unchanged shop
+consumers.
